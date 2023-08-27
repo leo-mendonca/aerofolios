@@ -1,6 +1,7 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from Definicoes import *
 
 
 class Aerofolio(object):
@@ -22,9 +23,23 @@ class AerofolioFino(Aerofolio):
         self.c_M=-np.pi/2*(A0+A1-A2/2)
         self.c_D=0
 
+
     def y_camber(self, x):
         '''Camber, em funcao de x, do aerofolio'''
         return np.sum([self.vetor_coeficientes[i]*np.sin(i*np.pi*x) for i in range(len(self.vetor_coeficientes))], axis=0)
+
+    def y_sup(self,x):
+        '''Linha superior do aerofolio'''
+        return self.y_camber(x) #Aerofolio sem espessura
+    def y_inf(self,x):
+        '''Linha inferior do aerofolio'''
+        return self.y_camber(x) #Aerofolio sem espessura
+    def x_sup(self,x):
+        '''Posicao horizontal da lina superior do aerofolio. Pode ser deslocado em caso de espessura nao-nulo'''
+        return x
+    def x_inf(self,x):
+        ''' Posicao horizontal da lina inferior do aerofolio. Pode ser deslocado em caso de espessura nao-nulo'''
+        return x
 
     def calcula_coef_vorticidade(self, n):
         '''
@@ -48,20 +63,40 @@ class AerofolioFino(Aerofolio):
             raise ValueError("n deve ser inteiro e maior ou igual a zero")
         return integral
 
-    def desenhar(self):
-        '''Plota o aerofolio em uma janela do matplotlib'''
+    def desenhar_fino(self):
+        '''Plota o aerofolio em uma janela do matplotlib como uma linha sem espessura'''
         fig,eixo=plt.subplots()
         fig.set_size_inches(7.5,5)
         x=np.arange(0,1.01,0.01)
         y=self.y_camber(x)
-        eixo.plot(x,y)
+        eixo.plot(x,y, color="black")
+
+    def desenhar(self):
+        fig,eixo=plt.subplots()
+        fig.set_size_inches(7.5,5)
+        x=np.arange(0,1.01,0.01)
+        x1=self.x_sup(x)
+        x2=self.x_inf(x)
+        y=self.y_camber(x)
+        y1=self.y_sup(x)
+        y2=self.y_inf(x)
+        eixo.set_xlim(-0.05,1.05)
+        eixo.set_ylim(-0.55,0.55)
+        eixo.set_aspect("equal")
+        eixo.plot(x1,y1, color="black")
+        eixo.plot(x2,y2, color="black")
+        eixo.fill_between(x1,y1, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
+        eixo.fill_between(x2,y2, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
+        eixo.plot(x,y, color="gray", linestyle="dashed")
+
 
 class AerofolioFinoNACA4(AerofolioFino):
-    def __init__(self, vetor_coeficientes, U0, alfa):
+    def __init__(self, vetor_coeficientes, alfa, U0):
         self.const_m, self.const_p, self.const_t = vetor_coeficientes
         self.theta_p=np.arccos(1-2*self.const_p)
         self.beta=1/self.const_p**2 - 1/(1-self.const_p)**2
         super(AerofolioFinoNACA4, self).__init__(vetor_coeficientes, U0, alfa)
+        self.volume=0.6851*self.const_t ##Integral de x*espessura(x) entre 0 e 1 (aproximacao!)
 
 
     def y_camber(self, x):
@@ -71,9 +106,22 @@ class AerofolioFinoNACA4(AerofolioFino):
         grad=self.const_m/self.const_p**2*(2*self.const_p-2*x)*(x<self.const_p) + self.const_m/(1-self.const_p)**2*(2*self.const_p-2*x)*(x>=self.const_p)
         return grad
 
+    def theta_camber(self, x):
+        return np.arctan(self.grad_y_camber(x))
+
     def espessura(self, x):
         y_espessura= 5*self.const_t*(0.2969*np.sqrt(x)-0.1260*x-0.3516*x**2+0.2843*x**3-0.1015*x**4)
         return y_espessura
+
+    def y_sup(self,x):
+        return self.y_camber(x)+self.espessura(x)*np.cos(self.theta_camber(x))
+    def y_inf(self,x):
+        return self.y_camber(x)-self.espessura(x)*np.cos(self.theta_camber(x))
+
+    def x_sup(self,x):
+        return x-self.espessura(x)*np.sin(self.theta_camber(x))
+    def x_inf(self,x):
+        return x+self.espessura(x)*np.sin(self.theta_camber(x))
 
     def calcula_coef_vorticidade(self, n):
         if n==0:
@@ -86,48 +134,104 @@ class AerofolioFinoNACA4(AerofolioFino):
             raise ValueError("n deve ser inteiro e maior ou igual a zero")
         return integral
 
-    def desenhar_fino(self):
-        super(AerofolioFinoNACA4, self).desenhar()
+
+
+
+
 
 ##TODO implementar classe NACA 5 digitos
-##TODO desenhar limites do aerofolio para poder usar em Elementos Finitos
+
+
+def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None):
+    '''Produz uma tabela de valores de entrada e saida de resultados de aerofolio fino NACA4.
+    :param distribuicoes: list. Lista de distribuicoes aleatorias, uma para cada parametro. Devem receber n e retornar um vetor de n amostras aleatorias
+    :param n_amostras: int. Numero de casos a gerar
+    :param path_salvar: str. Local para salvar os resultados em um arquivo .csv. Se None, os resultados nao sao salvos
+    '''
+    nvars=len(distribuicoes)
+    amostragens=[]
+    for i in range(nvars):
+        amostragens.append(distribuicoes[i](n_amostras))
+    params_entrada=np.vstack(amostragens).T
+    resultados=[]
+    for i in range(n_amostras):
+        m,p,t,alfa,U0=params_entrada[i]
+        af=AerofolioFinoNACA4(vetor_coeficientes=[m,p,t], alfa=alfa, U0=U0)
+        c_L,c_D,c_M = af.c_L,af.c_D,af.c_M
+        resultados.append([c_L,c_D,c_M])
+    matriz_resultados=np.vstack(resultados)
+    saida=np.hstack((params_entrada, matriz_resultados))
+    dframe=pd.DataFrame(saida, columns=["M","P","T","alfa","U", "c_L","c_D","c_M"])
+    if not path_salvar is None:
+        dframe.to_csv(path_salvar)
+    return dframe
+
 
 
 
 
 if __name__=="__main__":
     plt.rcParams["axes.grid"]=True
-    # coefs=np.array([1/4,1/8,-1/16,1/32])
-    # af=AerofolioFino(coefs, 1, 0)
-    m=0.02
-    p=0.4
-    t=0.12
-    af=AerofolioFinoNACA4([m,p,t], 1, 0)
-    af.desenhar()
-    print(f"c_D = {af.c_D}")
-    print(f"c_L = {af.c_L}")
-    print(f"c_M = {af.c_M}")
+
+
+    def distro_p(n):
+        amostra=np.random.normal(0.40, 0.10, size=n)
+        amostra[amostra<0.1]=0.1
+        amostra[amostra>0.9]=0.9
+        return amostra
+    distro_m=lambda n:np.random.uniform(-0.10,+0.10, n)
+    def distro_t(n):
+        amostra=np.random.normal(0.12, 0.05, n)
+        amostra[amostra<0.01]=0.01
+        return amostra
+    distro_alfa=lambda n: np.random.normal(0,5,n)
+    distro_U=lambda n: 1*np.random.weibull(3, n)
+    distribuicoes=[distro_m, distro_p,distro_t,distro_alfa,distro_U]
+
+    NACA2412=AerofolioFinoNACA4([0.02,0.4,0.12], 0, 1)
+    NACA2412.desenhar()
+    NACA4412=AerofolioFinoNACA4([0.04,0.4,0.12], 0, 1)
+    NACA4412.desenhar()
+    NACA0024=AerofolioFinoNACA4([0.0,0.01,0.24], 0, 1)
+    NACA0024.desenhar()
+    NACA0050=AerofolioFinoNACA4([0.06,0.01,0.5], 0, 1)
     plt.show(block=False)
-    # coefs = np.array([-1., ])
-    # af = AerofolioFino(coefs, 1, 0)
+
+
+    banco=gerar_banco_dados(distribuicoes, n_amostras=2**20, path_salvar="Saida/Aerofolio Fino NACA4/banco_resultados.csv")
+    print(banco)
+
+    # # coefs=np.array([1/4,1/8,-1/16,1/32])
+    # # af=AerofolioFino(coefs, 1, 0)
+    # m=0.06
+    # p=0.4
+    # t=0.12
+    # af=AerofolioFinoNACA4([m,p,t], 0, 1)
+    # af.desenhar()
     # print(f"c_D = {af.c_D}")
     # print(f"c_L = {af.c_L}")
     # print(f"c_M = {af.c_M}")
-
-    alfas=np.arange(-45,45.1,0.1)
-    lista_c_L=[]
-    lista_c_D=[]
-    lista_c_M=[]
-    for alfa in alfas:
-        pass
-        af=AerofolioFinoNACA4([m,p,t], 1, alfa)
-        lista_c_L.append(af.c_L)
-        lista_c_D.append(af.c_D)
-        lista_c_M.append(af.c_M)
-    plt.figure()
-    plt.plot(alfas, lista_c_L, label="c_L")
-    plt.plot(alfas, lista_c_D, label="c_D")
-    plt.plot(alfas, lista_c_M, label="c_M")
-    plt.legend()
-    plt.show(block=False)
-    plt.show(block=True)
+    # plt.show(block=False)
+    # # coefs = np.array([-1., ])
+    # # af = AerofolioFino(coefs, 1, 0)
+    # # print(f"c_D = {af.c_D}")
+    # # print(f"c_L = {af.c_L}")
+    # # print(f"c_M = {af.c_M}")
+    #
+    # alfas=np.arange(-45,45.1,0.1)
+    # lista_c_L=[]
+    # lista_c_D=[]
+    # lista_c_M=[]
+    # for alfa in alfas:
+    #     pass
+    #     af=AerofolioFinoNACA4([m,p,t], alfa, 1)
+    #     lista_c_L.append(af.c_L)
+    #     lista_c_D.append(af.c_D)
+    #     lista_c_M.append(af.c_M)
+    # plt.figure()
+    # plt.plot(alfas, lista_c_L, label="c_L")
+    # plt.plot(alfas, lista_c_D, label="c_D")
+    # plt.plot(alfas, lista_c_M, label="c_M")
+    # plt.legend()
+    # plt.show(block=False)
+    # plt.show(block=True)
