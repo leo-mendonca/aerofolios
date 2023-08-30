@@ -135,11 +135,7 @@ class AerofolioFinoNACA4(AerofolioFino):
         return integral
 
 
-
-
-
-
-##TODO implementar classe NACA 5 digitos
+##TODO implementar classe NACA 5 digitos (mesmo?)
 
 
 def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None):
@@ -158,10 +154,11 @@ def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None):
         m,p,t,alfa,U0=params_entrada[i]
         af=AerofolioFinoNACA4(vetor_coeficientes=[m,p,t], alfa=alfa, U0=U0)
         c_L,c_D,c_M = af.c_L,af.c_D,af.c_M
-        resultados.append([c_L,c_D,c_M])
+        V=af.volume
+        resultados.append([c_L,c_D,c_M,V])
     matriz_resultados=np.vstack(resultados)
     saida=np.hstack((params_entrada, matriz_resultados))
-    dframe=pd.DataFrame(saida, columns=["M","P","T","alfa","U", "c_L","c_D","c_M"])
+    dframe=pd.DataFrame(saida, columns=["M","P","T","alfa","U", "c_L","c_D","c_M","V"])
     if not path_salvar is None:
         dframe.to_csv(path_salvar)
     return dframe
@@ -188,14 +185,14 @@ if __name__=="__main__":
     distro_U=lambda n: 1*np.random.weibull(3, n)
     distribuicoes=[distro_m, distro_p,distro_t,distro_alfa,distro_U]
 
-    NACA2412=AerofolioFinoNACA4([0.02,0.4,0.12], 0, 1)
-    NACA2412.desenhar()
-    NACA4412=AerofolioFinoNACA4([0.04,0.4,0.12], 0, 1)
-    NACA4412.desenhar()
-    NACA0024=AerofolioFinoNACA4([0.0,0.01,0.24], 0, 1)
-    NACA0024.desenhar()
-    NACA0050=AerofolioFinoNACA4([0.06,0.01,0.5], 0, 1)
-    plt.show(block=False)
+    # NACA2412=AerofolioFinoNACA4([0.02,0.4,0.12], 0, 1)
+    # NACA2412.desenhar()
+    # NACA4412=AerofolioFinoNACA4([0.04,0.4,0.12], 0, 1)
+    # NACA4412.desenhar()
+    # NACA0024=AerofolioFinoNACA4([0.0,0.01,0.24], 0, 1)
+    # NACA0024.desenhar()
+    # NACA0050=AerofolioFinoNACA4([0.06,0.01,0.5], 0, 1)
+    # plt.show(block=False)
 
 
     banco=gerar_banco_dados(distribuicoes, n_amostras=2**20, path_salvar="Saida/Aerofolio Fino NACA4/banco_resultados.csv")
