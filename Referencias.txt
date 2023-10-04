@@ -3,3 +3,7 @@ Fundamental of Finite Element Method for Mass and Heat Transfer
     Polinômios interpoladores de Lagrange e funções de forma para elementos finitos unidimensionais ou triangulares (3.2)
     Coordenadas de área Li, Lj, Lk para um elemento triangular (3.2.4)
     Função de forma N_abc em função das coordenadas de área para um elemento triangular de forma relativamente simples (3.2.5) (Silvester 1969)
+
+
+GMSH
+     C. Geuzaine and J.-F. Remacle, Gmsh: a three-dimensional finite element mesh generator with built-in pre- and post-processing facilities. International Journal for Numerical Methods in Engineering, Volume 79, Issue 11, pages 1309-1331, 2009
