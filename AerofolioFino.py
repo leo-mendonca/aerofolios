@@ -13,7 +13,7 @@ class AerofolioFino(Aerofolio):
         '''
         :param vetor_coeficientes: array de coeficientes da serie de Fourier de senos que define a linha media do aerofolio
         :param U0: velocidade do escoamento incidente
-        :param alfa: angulo de ataque do aerofolio
+        :param alfa: angulo de ataque do aerofolio, em radianos
         '''
         self.vetor_coeficientes = vetor_coeficientes
         self.U0 = U0
@@ -22,6 +22,7 @@ class AerofolioFino(Aerofolio):
         self.c_L=2*np.pi*(A0+A1/2)
         self.c_M=-np.pi/2*(A0+A1-A2/2)
         self.c_D=0
+        self.nome="Aerofolio-" + "-".join([str(i) for i in vetor_coeficientes])
 
 
     def y_camber(self, x):
@@ -40,6 +41,23 @@ class AerofolioFino(Aerofolio):
     def x_inf(self,x):
         ''' Posicao horizontal da lina inferior do aerofolio. Pode ser deslocado em caso de espessura nao-nulo'''
         return x
+
+    def angulo_sup(self,x):
+        '''Angulo, em rad, da linha superior do aerofolio na posicao x'''
+        dx=0.0001
+        dx_sup=self.x_sup(x+dx)-self.x_sup(x)
+        dy_sup=self.y_sup(x+dx)-self.y_sup(x)
+        angulo=np.arctan2(dy_sup,dx_sup)
+        return angulo
+
+    def angulo_inf(self,x):
+        '''Angulo, em rad, da linha inferior do aerofolio na posicao x'''
+        dx=0.0001
+        dx_inf=self.x_inf(x+dx)-self.x_inf(x)
+        dy_inf=self.y_inf(x+dx)-self.y_inf(x)
+        angulo=np.arctan2(dy_inf,dx_inf)
+        return angulo
+
 
     def calcula_coef_vorticidade(self, n):
         '''
@@ -97,7 +115,8 @@ class AerofolioFinoNACA4(AerofolioFino):
         self.beta=1/self.const_p**2 - 1/(1-self.const_p)**2
         super(AerofolioFinoNACA4, self).__init__(vetor_coeficientes, U0, alfa)
         self.volume=0.6851*self.const_t ##Integral de x*espessura(x) entre 0 e 1 (aproximacao!)
-
+        self.nome=f"NACA-{(self.const_m*100)}-{(self.const_p*10)}-{(self.const_t*100)}-"
+    ##TODO validar topologia zoada com autointersecao do contorno inferior quando p eh muito pequena ou t eh muito grande
 
     def y_camber(self, x):
         y = (self.const_m/self.const_p**2*(2*self.const_p*x-x**2))*(x<self.const_p) + (self.const_m/(1-self.const_p)**2*(1-2*self.const_p+2*self.const_p*x-x**2))*(x>=self.const_p)
@@ -113,7 +132,7 @@ class AerofolioFinoNACA4(AerofolioFino):
         y_espessura= 5*self.const_t*(0.2969*np.sqrt(x)-0.1260*x-0.3516*x**2+0.2843*x**3-0.1015*x**4)
         return y_espessura
 
-    def y_sup(self,x):
+    def y_sup(self,x): ##TODO conferir equacoes e fazer y(0)=y(1)=0 (erros numericos estao acontecendo)
         return self.y_camber(x)+self.espessura(x)*np.cos(self.theta_camber(x))
     def y_inf(self,x):
         return self.y_camber(x)-self.espessura(x)*np.cos(self.theta_camber(x))
