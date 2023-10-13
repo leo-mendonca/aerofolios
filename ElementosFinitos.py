@@ -1,3 +1,5 @@
+import warnings
+
 from mpi4py import MPI
 from dolfinx import mesh as dmesh
 import dolfinx.io as dio
@@ -13,9 +15,10 @@ import dolfinx.io.gmshio
 
 # MPI.COMM_WORLD permite a paralelizacao de uma mesma malha entre processadores diferentes
 from dolfinx import fem as dfem
+n_pontos_contorno_padrao=1000
 
 
-def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=1000) :
+def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao) :
     '''Gera uma malha no gmsh correspondendo a regiao em torno do aerofolio'''
     ##TODO implementar
     contornos = {"entrada" : 1, "saida" : 2, "superior" : 3, "inferior" : 4, }
@@ -37,8 +40,8 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=1000) :
     geo.add_line(2, 4, tag=contornos["superior"])
 
     ###versao a vera com aerofolio
-    ponto_inicial = geo.add_point(0, 0, 0, af_tamanho)
-    ponto_final = geo.add_point(1, 0, 0, af_tamanho)
+    ponto_inicial = geo.add_point(aerofolio.x_med(0), aerofolio.y_med(0), 0, af_tamanho)
+    ponto_final = geo.add_point(aerofolio.x_med(1), aerofolio.y_med(1), 0, af_tamanho)
     pontos_sup = [ponto_inicial, ]
     pontos_inf = [ponto_inicial, ]
     af_sup = []
@@ -122,19 +125,160 @@ def calculo_aerofolio(aerofolio) :
     # TODO calcular as propriedades aerodinamicas
     print(psi_h)
 
+class SolucaoEscoamento :
+    def __init__(self, aerofolio, nome_malha, n_pontos_contorno=n_pontos_contorno_padrao, gerar_malha=True) :
+        self.aerofolio=aerofolio
+        self.n_pontos_contorno=n_pontos_contorno
+        if gerar_malha :
+            nome_malha=malha_aerofolio(aerofolio, nome_malha, n_pontos_contorno)
 
-def solucao_escoamento(aerofolio, nome_malha) :
+        self.resolve_escoamento(aerofolio, nome_malha)
+
+    def resolve_escoamento(self, aerofolio, nome_malha):
+        '''Resolve o escoamento em torno de um aerofolio a partir da malha gerada pelo gmsh.
+            Retorna a funcao potencial como um campo do dolfin
+            :param aerofolio: objeto da classe AerofolioFino
+            :param malha: nome do arquivo da malha gerada pelo gmsh
+            '''
+        y_1, y_2 = -1., 1.
+        x_1, x_2 = -2., 3.
+        self.limites= [[x_1, y_1], [x_2, y_2]]
+        U0 = aerofolio.U0
+        alfa = aerofolio.alfa
+        self.malha, self.cell_tags, self.facet_tags = dio.gmshio.read_from_msh(nome_malha, MPI.COMM_WORLD, rank=0, gdim=2)
+
+        V = dfem.FunctionSpace(self.malha, ("CG", 1))  ##CG eh a familia de polinomios interpoladores de Lagrange, 2 eh a ordem do polinomio
+        self.espaco=V
+        phi_0 = 0.
+        phi_entrada = lambda x : phi_0 + x[0] * 0  # define-se psi=0 em y=0
+        phi_saida = lambda x : phi_0 + U0 * (x_2 - x_1) + x[0] * 0
+        phi_lateral = lambda x : phi_0 + U0 * x[0] - x_1
+        u_in = dfem.Function(V)
+        u_out = dfem.Function(V)
+        u_lateral = dfem.Function(V)
+        u_in.interpolate(phi_entrada)
+        u_out.interpolate(phi_saida)
+        u_lateral.interpolate(phi_lateral)
+        tdim = self.malha.topology.dim  # dimensao do espaco (no caso, 2D)
+        fdim = tdim - 1  # dimensao do contorno (no caso, 1D)
+        boundary_facets = dmesh.exterior_facet_indices(self.malha.topology)  # indices dos segmentos dos contornos
+        boundary_dofs = dfem.locate_dofs_topological(V, fdim, boundary_facets)  # indices dos graus de liberdade dos segmentos dos contornos
+        contorno_entrada = dfem.locate_dofs_geometrical(V, lambda x : np.isclose(x[0], x_1))
+        contorno_saida = dfem.locate_dofs_geometrical(V, lambda x : np.isclose(x[0], x_2))
+        contorno_superior = dfem.locate_dofs_geometrical(V, lambda x : np.isclose(x[1], y_2))
+        contorno_inferior = dfem.locate_dofs_geometrical(V, lambda x : np.isclose(x[1], y_1))
+        contornos_externos = np.concatenate([contorno_superior, contorno_inferior, contorno_entrada, contorno_saida])
+        self.contorno_aerofolio = np.setdiff1d(boundary_dofs, contornos_externos)
+        # TODO definir contorno do aerofolio geometricamente
+
+        bc_entrada = dfem.dirichletbc(u_in, contorno_entrada)  # aplica a condicao de contorno de Dirichlet com valor u_in
+        bc_saida = dfem.dirichletbc(u_out, contorno_saida)  # aplica a condicao de contorno de Dirichlet com valor u_out
+        bc_superior = dfem.dirichletbc(u_lateral, contorno_superior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
+        bc_inferior = dfem.dirichletbc(u_lateral, contorno_inferior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
+
+        phi = ufl.TrialFunction(V)
+        v = ufl.TestFunction(V)
+        a = ufl.dot(ufl.grad(phi), ufl.grad(v)) * ufl.dx  # define a forma bilinear a(u,v) = \int_\Omega \del psi * \del v dx
+        coord = ufl.SpatialCoordinate(self.malha)
+        L = (coord[0] - coord[
+            0]) * v * ufl.ds  # a forma linear nesse caso desaparece, pois as condicoes de contorno nas paredes, entrada e saida sao Dirichlet, e no aerofolio e von Neumann
+        problema = dfem.petsc.LinearProblem(a, L, bcs=[bc_entrada, bc_saida, bc_superior,
+                                                       bc_inferior], petsc_options={"ksp_type" : "preonly", "pc_type" : "lu"})  # fatoracao LU para solucao da matriz
+        phi_h = problema.solve()  # resolve o sistema e retorna a funcao-solucao
+
+        # ##Interpretando os dados
+        # vetor = phi_h.vector.array
+        # x = malha.geometry.x[:, 0]
+        # y = malha.geometry.x[:, 1]
+        # plt.figure()
+        # plt.scatter(x, y, c=vetor)
+        self.phi=phi_h
+        self.val_phi=self.phi.vector.array
+        self.x=self.malha.geometry.x
+
+    def interpola_solucao(self, n_pontos):
+        '''Calcula a solucao da funcao potencial em uma malha regular de pontos'''
+        x_1, y_1 = self.limites[0]
+        x_2, y_2 = self.limites[1]
+        self.malha_solucao=dmesh.create_rectangle(MPI.COMM_WORLD, [[x_1, y_1], [x_2, y_2]], [n_pontos, n_pontos], dmesh.CellType.quadrilateral)
+        espaco_solucao=dfem.FunctionSpace(self.malha_solucao, ("CG", 1))
+        self.phi_solucao=dfem.Function(espaco_solucao)
+        self.phi_solucao.interpolate(self.phi)
+        self.x_solucao=self.malha_solucao.geometry.x
+        return self.x_solucao, self.phi_solucao.vector.array
+
+    def ordena_contorno(self):
+        '''Ordena os pontos do contorno do aerofolio em sentido anti-horario'''
+        x_aerofolio=self.x[self.contorno_aerofolio]
+        x, y =x_aerofolio[:,0], x_aerofolio[:,1]
+
+        eta=np.arange(1,self.n_pontos_contorno)/self.n_pontos_contorno
+        x_0,y_0=self.aerofolio.x_med(0), self.aerofolio.y_med(0)  #inicial
+        x_f, y_f=self.aerofolio.x_med(1), self.aerofolio.y_med(1) #final
+        x_sup, y_sup = self.aerofolio.x_sup(eta), self.aerofolio.y_sup(eta)
+        x_inf, y_inf = self.aerofolio.x_inf(eta), self.aerofolio.y_inf(eta)
+        pos_inf=np.array([x_inf,y_inf]).T
+        pos_sup=np.array([x_sup,y_sup]).T
+        caminho=np.concatenate([((x_0,y_0),),pos_inf,((x_f,y_f),),pos_sup[::-1]]) #comeca no ponto 0, faz o caminho por baixo e depois volta pór cima (sentido anti-horario)
+        pontos=np.zeros(len(caminho),dtype=int)
+        for i in range(len(pontos)):
+            pontos[i]=np.argmin((x-caminho[i,0])**2+(y-caminho[i,1])**2) #indice de cada ponto do contorno na lista dos pontos de contorno
+        self.indices_contorno=self.contorno_aerofolio[pontos] #indice de cada ponto na lista global de pontos da malha
+        return self.indices_contorno
+
+    def calcula_forcas(self):
+        '''Calcula as forcas de sustentacao e arrasto e momento produzidas pela pressao'''
+        #TODO implementar
+        lista_pontos=np.concatenate((self.indices_contorno, self.indices_contorno[0:1])) #da um loop completo, repetindo o ponto zero
+        x, y, z=self.x[lista_pontos].T
+        dx=x[1:]-x[:-1]
+        dy=y[1:]-y[:-1] #o vetor entre um ponto e o seguinte eh (dx,dy)
+        ds=np.sqrt(dx**2+dy**2) #comprimento de cada segmento
+        dphi=self.val_phi[lista_pontos[1:]]-self.val_phi[lista_pontos[:-1]]
+        ##pontos medios de cada segmento:
+        x_med=(x[1:]+x[:-1])/2
+        y_med=(y[1:]+y[:-1])/2
+        u=dphi/ds #modulo da velocidade em cada ponto
+        #vetor normal ao segmento entre pontos consecutivos
+        normal=np.transpose([-dy/ds, dx/ds])
+        ##Bernoulli: p/rho+1/2*U²=cte
+        ##Todas as grandezas aqui retornadas sao divididas por unidade de massa (F_L/rho, F_D/rho, M/rho)
+        ##Defina p/rho=0 no ponto 0
+        pressao_total=0 + 1/2*u[0]**2
+        pressao=pressao_total-1/2*u**2
+        forcas=(pressao*ds*normal.T).T
+        x_rel,y_rel = x_med-self.aerofolio.x_o, y_med-self.aerofolio.y_o #posicao do ponto central dos segmentos em relacao ao centro (quarto de corda) do aerofolio
+        momentos=x_rel*forcas[:,1]-y_rel*forcas[:,0] #momento em relacao ao centro do aerofolio
+        self.forca=forcas.sum(axis=0)
+        self.F_D, self.F_L=self.forca #forcas de sustentacao e arrasto por unidade de massa especifica do fluido
+        self.M=momentos.sum() #momento em relacao ao centro do aerofolio por unidade de massa especifica do fluido
+        return self.F_L, self.F_D, self.M
+    ##TODO debugar e entender por que F_L esta dando zero
+
+    def linha_corrente(self, ponto_inicial):
+        ##TODO tracar linha de corrente a partir do gradiente de phi
+        pass
+
+
+
+
+
+
+
+
+def solucao_escoamento(aerofolio, nome_malha, n_pontos_contorno=n_pontos_contorno_padrao) :
     '''Resolve o escoamento em torno de um aerofolio a partir da malha gerada pelo gmsh.
     Retorna a funcao potencial como um campo do dolfin
     :param aerofolio: objeto da classe AerofolioFino
     :param malha: nome do arquivo da malha gerada pelo gmsh
     '''
-    y_1, y_2 = -1, 1
-    x_1, x_2 = -2, 3
+    warnings.warn("Funcao depreciada. Use a classe SolucaoEscoamento", DeprecationWarning)
+    y_1, y_2 = -1., 1.
+    x_1, x_2 = -2., 3.
     U0 = aerofolio.U0
     alfa = aerofolio.alfa
     malha, cell_tags, facet_tags = dio.gmshio.read_from_msh(nome_malha, MPI.COMM_WORLD, rank=0, gdim=2)
-    V = dfem.FunctionSpace(malha, ("CG", 1))  ##CG eh a familia de polinomios interpoladores de Lagrange, 2 eh a ordem do polinomio
+    V = dfem.FunctionSpace(malha, ("CG", 1))  ##CG eh a familia de polinomios interpoladores de Lagrange, 1 eh a ordem do polinomio
     phi_0 = 0.
     phi_entrada = lambda x : phi_0 + x[0] * 0  # define-se psi=0 em y=0
     phi_saida = lambda x : phi_0 + U0 * (x_2 - x_1) + x[0] * 0
@@ -155,7 +299,7 @@ def solucao_escoamento(aerofolio, nome_malha) :
     contorno_inferior = dfem.locate_dofs_geometrical(V, lambda x : np.isclose(x[1], y_1))
     contornos_externos = np.concatenate([contorno_superior, contorno_inferior, contorno_entrada, contorno_saida])
     contorno_aerofolio = np.setdiff1d(boundary_dofs, contornos_externos)
-    # TODO definir contorno do aerofolio geometricamente
+
 
     bc_entrada = dfem.dirichletbc(u_in, contorno_entrada)  # aplica a condicao de contorno de Dirichlet com valor u_in
     bc_saida = dfem.dirichletbc(u_out, contorno_saida)  # aplica a condicao de contorno de Dirichlet com valor u_out
@@ -180,18 +324,21 @@ def solucao_escoamento(aerofolio, nome_malha) :
     # plt.scatter(x, y, c=vetor)
 
     vals=np.empty(shape=len(malha.geometry.x), dtype=np.float64)
-    eval=phi_h.eval(vals, malha.geometry.x)
-
-
+    eval=phi_h.eval(x=np.array([[x_1,y_1,0.],[x_2,y_2,0.]]), cells=[0,1])
+    print(eval)
+    outra_malha=dmesh.create_rectangle(MPI.COMM_WORLD, [[x_1, y_1], [x_2, y_2]], [10,10], dmesh.CellType.quadrilateral)
+    Sol=dfem.FunctionSpace(outra_malha, ("CG", 1))
+    phi_h2=dfem.Function(Sol)
+    phi_h2.interpolate(phi_h)
+    print(phi_h2.vector.array)
     return phi_h
 
-def calcula_gradientes_solucao(phi_h, malha) :
 
 def exemplo() :
     # from dolfinx.fem import FunctionSpace
     ##Vamos resolver a equacao de Poisson: \del² u = f
     ##O problema foi manufaturado com f=-6 para ter solucao exata u = 1+x²+2y²
-    domain = dmesh.create_unit_square(MPI.COMM_WORLD, 8, 8, dmesh.CellType.quadrilateral)
+    domain = dmesh.create_unit_square(MPI.COMM_WORLD, 8, 8, dmesh.CellType.triangle)
     V = dfem.FunctionSpace(domain, ("CG", 2))  ##CG eh a familia de polinomios interpoladores de Lagrange, 2 eh a ordem do polinomio
     uD = dfem.Function(V)
     funcao_contorno = lambda x : 1 + x[0] ** 2 + 2 * x[1] ** 2
@@ -266,9 +413,16 @@ def exemplo() :
 if __name__ == "__main__" :
     import AerofolioFino
 
-    aerofolio = AerofolioFino.AerofolioFinoNACA4([0.04, 0.4, 0.12], 0, 1)
-    # nome_malha=malha_aerofolio(aerofolio, nome_modelo="NACA4412 grosseiro", n_pontos_contorno=10)
-    nome_malha = 'Malha/NACA4412 grosseiro.msh'
-    phi = solucao_escoamento(aerofolio, nome_malha)
-    # psi = calculo_aerofolio(AerofolioFino.AerofolioFinoNACA4([0.04, 0.4, 0.12], 0, 1))
+    aerofolio = AerofolioFino.AerofolioFinoNACA4([0.04, 0.4, 0.01], 0, 100)
+    nome_malha=malha_aerofolio(aerofolio, nome_modelo="NACA fino", n_pontos_contorno=1000)
+    # nome_malha = 'Malha/NACA4412.msh'
+    solucao = SolucaoEscoamento(aerofolio, nome_malha, n_pontos_contorno=1000, gerar_malha=False)
+    solucao.ordena_contorno()
+    print(solucao.calcula_forcas())
+    # x, phi = solucao.interpola_solucao(100)
+    # plt.scatter(x[:, 0], x[:, 1], c=phi)
+    # plt.figure()
+    # indices=solucao.ordena_contorno()
+    # plt.plot(solucao.x[indices,0], solucao.x[indices,1])
+    plt.show(block=False)
     print("?")
