@@ -4,6 +4,12 @@ Fundamental of Finite Element Method for Mass and Heat Transfer
     Coordenadas de área Li, Lj, Lk para um elemento triangular (3.2.4)
     Função de forma N_abc em função das coordenadas de área para um elemento triangular de forma relativamente simples (3.2.5) (Silvester 1969)
 
-
 GMSH
      C. Geuzaine and J.-F. Remacle, Gmsh: a three-dimensional finite element mesh generator with built-in pre- and post-processing facilities. International Journal for Numerical Methods in Engineering, Volume 79, Issue 11, pages 1309-1331, 2009
+
+Fluid Mechanics. Arthyr G. Hansen, 1967
+    O escoamento potencial é irrotacional, e um escoamento irrotacional pode ser modelado como um escoamento potencial.
+
+FENICSx Tutorial. https://jsdokken.com/dolfinx-tutorial/
+
+Goda, K. 1978. A multistep technique with implicit difference schemes for calculating two- or three-dimensional cavity flows. Journal of Computational Physics 30: 76-95.
