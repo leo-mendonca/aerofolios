@@ -3,6 +3,8 @@ import warnings
 from mpi4py import MPI
 from dolfinx import mesh as dmesh
 import dolfinx.io as dio
+from dolfinx import fem as dfem
+from dolfinx import nls as dnls
 import numpy as np
 import os
 from petsc4py.PETSc import ScalarType
@@ -14,7 +16,6 @@ geo = gmsh.model.geo  # definindo um alias para o modulo de geometria do gmsh
 import dolfinx.io.gmshio
 
 # MPI.COMM_WORLD permite a paralelizacao de uma mesma malha entre processadores diferentes
-from dolfinx import fem as dfem
 n_pontos_contorno_padrao=1000
 
 
@@ -134,31 +135,33 @@ class SolucaoEscoamento :
 
         self.resolve_escoamento(aerofolio, nome_malha)
 
-    def resolve_escoamento(self, aerofolio, nome_malha):
+    def resolve_escoamento(self, aerofolio, nome_malha, caso="inviscido"):
         '''Resolve o escoamento em torno de um aerofolio a partir da malha gerada pelo gmsh.
             Retorna a funcao potencial como um campo do dolfin
             :param aerofolio: objeto da classe AerofolioFino
             :param malha: nome do arquivo da malha gerada pelo gmsh
+            :param caso: ("inviscido", "viscoso"). Define o tipo de escoamento
             '''
+        ##TODO reescrever sem supor escoamento potencial (escoamentos potenciais sao irrotacionais, logo nao havera sustentacao)
         y_1, y_2 = -1., 1.
         x_1, x_2 = -2., 3.
         self.limites= [[x_1, y_1], [x_2, y_2]]
         U0 = aerofolio.U0
         alfa = aerofolio.alfa
         self.malha, self.cell_tags, self.facet_tags = dio.gmshio.read_from_msh(nome_malha, MPI.COMM_WORLD, rank=0, gdim=2)
-
-        V = dfem.FunctionSpace(self.malha, ("CG", 1))  ##CG eh a familia de polinomios interpoladores de Lagrange, 2 eh a ordem do polinomio
-        self.espaco=V
-        phi_0 = 0.
-        phi_entrada = lambda x : phi_0 + x[0] * 0  # define-se psi=0 em y=0
-        phi_saida = lambda x : phi_0 + U0 * (x_2 - x_1) + x[0] * 0
-        phi_lateral = lambda x : phi_0 + U0 * x[0] - x_1
-        u_in = dfem.Function(V)
-        u_out = dfem.Function(V)
-        u_lateral = dfem.Function(V)
-        u_in.interpolate(phi_entrada)
-        u_out.interpolate(phi_saida)
-        u_lateral.interpolate(phi_lateral)
+        if caso=="inviscido":
+            V = dfem.FunctionSpace(self.malha, ("CG", 1))  ##CG eh a familia de polinomios interpoladores de Lagrange, 1 eh a ordem do polinomio
+            self.espaco=V
+            phi_0 = 0.
+            phi_entrada = lambda x : phi_0 + x[0] * 0  # define-se psi=0 em y=0
+            phi_saida = lambda x : phi_0 + U0 * (x_2 - x_1) + x[0] * 0
+            phi_lateral = lambda x : phi_0 + U0 * x[0] - x_1
+            u_in = dfem.Function(V)
+            u_out = dfem.Function(V)
+            u_lateral = dfem.Function(V)
+            u_in.interpolate(phi_entrada)
+            u_out.interpolate(phi_saida)
+            u_lateral.interpolate(phi_lateral)
         tdim = self.malha.topology.dim  # dimensao do espaco (no caso, 2D)
         fdim = tdim - 1  # dimensao do contorno (no caso, 1D)
         boundary_facets = dmesh.exterior_facet_indices(self.malha.topology)  # indices dos segmentos dos contornos
@@ -176,15 +179,22 @@ class SolucaoEscoamento :
         bc_superior = dfem.dirichletbc(u_lateral, contorno_superior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
         bc_inferior = dfem.dirichletbc(u_lateral, contorno_inferior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
 
-        phi = ufl.TrialFunction(V)
+        uh = dfem.Function(V)
         v = ufl.TestFunction(V)
+        
+        #TODO refazer essa parte com u em vez de phi
         a = ufl.dot(ufl.grad(phi), ufl.grad(v)) * ufl.dx  # define a forma bilinear a(u,v) = \int_\Omega \del psi * \del v dx
         coord = ufl.SpatialCoordinate(self.malha)
-        L = (coord[0] - coord[
-            0]) * v * ufl.ds  # a forma linear nesse caso desaparece, pois as condicoes de contorno nas paredes, entrada e saida sao Dirichlet, e no aerofolio e von Neumann
-        problema = dfem.petsc.LinearProblem(a, L, bcs=[bc_entrada, bc_saida, bc_superior,
-                                                       bc_inferior], petsc_options={"ksp_type" : "preonly", "pc_type" : "lu"})  # fatoracao LU para solucao da matriz
-        phi_h = problema.solve()  # resolve o sistema e retorna a funcao-solucao
+
+        L = (coord[0] - coord[0]) * v * ufl.ds  # a forma linear nesse caso desaparece, pois as condicoes de contorno nas paredes, entrada e saida sao Dirichlet, e no aerofolio e von Neumann
+        F = a - L  # define a forma variacional F(u,v) = a(u,v) - L(v) = 0 #TODO escrever diretamente a expressao de F
+        problema = dfem.petsc.NonlinearProblem(F, uh, bcs=[bc_entrada, bc_saida, bc_superior,  bc_inferior])
+        ##Definicao do solver nao linear por metodo de Newton
+        solver = dnls.NewtonSolver(MPI.COMM_WORLD, problema)
+        solver.convergence_criterion = "incremental"
+        solver.rtol = 1e-6
+        solver.report=True
+        n_it, convergencia = problema.solve()  # resolve o sistema pelo metodo nao-linear
 
         # ##Interpretando os dados
         # vetor = phi_h.vector.array
@@ -192,8 +202,8 @@ class SolucaoEscoamento :
         # y = malha.geometry.x[:, 1]
         # plt.figure()
         # plt.scatter(x, y, c=vetor)
-        self.phi=phi_h
-        self.val_phi=self.phi.vector.array
+        self.u=uh
+        self.val_u=self.u.vector.array
         self.x=self.malha.geometry.x
 
     def interpola_solucao(self, n_pontos):
@@ -253,11 +263,12 @@ class SolucaoEscoamento :
         self.F_D, self.F_L=self.forca #forcas de sustentacao e arrasto por unidade de massa especifica do fluido
         self.M=momentos.sum() #momento em relacao ao centro do aerofolio por unidade de massa especifica do fluido
         return self.F_L, self.F_D, self.M
-    ##TODO debugar e entender por que F_L esta dando zero
+    ##TODO debugar e entender por que F_L esta dando baixo. POde ser um problema com o vetor normal
 
     def linha_corrente(self, ponto_inicial):
-        ##TODO tracar linha de corrente a partir do gradiente de phi
+        ##TODO tracar linha de corrente a partir da velocidade em cada ponto
         pass
+
 
 
 

@@ -4,6 +4,7 @@ import pandas as pd
 # matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib
 import warnings
 
 plt.rcParams["figure.dpi"]=300
