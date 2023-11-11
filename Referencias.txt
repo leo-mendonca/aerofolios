@@ -13,3 +13,5 @@ Fluid Mechanics. Arthyr G. Hansen, 1967
 FENICSx Tutorial. https://jsdokken.com/dolfinx-tutorial/
 
 Goda, K. 1978. A multistep technique with implicit difference schemes for calculating two- or three-dimensional cavity flows. Journal of Computational Physics 30: 76-95.
+    Método split entre velocidade e pressão. A cada passo de tempo, é calculado um p* e um u* usando o passo n, antes de calcular p_(n+1) e u_(n+1)
+    Esse método parte do pressuposto de um escoamento variando no tempo, mas na prática pode ser usado para fenômenos estacionários, através de uma solução iterativa.

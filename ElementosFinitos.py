@@ -1,10 +1,13 @@
 import warnings
 
 from mpi4py import MPI
+from dolfinx import log as dlog
+dlog.set_log_level(dlog.LogLevel(0))
 from dolfinx import mesh as dmesh
 import dolfinx.io as dio
 from dolfinx import fem as dfem
 from dolfinx import nls as dnls
+import dolfinx
 import numpy as np
 import os
 from petsc4py.PETSc import ScalarType
@@ -149,19 +152,41 @@ class SolucaoEscoamento :
         U0 = aerofolio.U0
         alfa = aerofolio.alfa
         self.malha, self.cell_tags, self.facet_tags = dio.gmshio.read_from_msh(nome_malha, MPI.COMM_WORLD, rank=0, gdim=2)
+
+        v_cg2 = ufl.VectorElement("Lagrange", self.malha.ufl_cell(), 2)  # elemento vetorial de Lagrange de ordem 2, ligado a velocidade
+        q_cg1 = ufl.FiniteElement("Lagrange", self.malha.ufl_cell(), 1)  # elemento escalar de Lagrange de ordem 1, ligado a pressao
+        V = dfem.FunctionSpace(self.malha, v_cg2)  # Espaco de funcao da velocidade
+        Q = dfem.FunctionSpace(self.malha, q_cg1)  # Espaco de funcao da pressao
+        self.espaco_V = V
+        self.espaco_Q = Q
+
         if caso=="inviscido":
-            V = dfem.FunctionSpace(self.malha, ("CG", 1))  ##CG eh a familia de polinomios interpoladores de Lagrange, 1 eh a ordem do polinomio
-            self.espaco=V
-            phi_0 = 0.
-            phi_entrada = lambda x : phi_0 + x[0] * 0  # define-se psi=0 em y=0
-            phi_saida = lambda x : phi_0 + U0 * (x_2 - x_1) + x[0] * 0
-            phi_lateral = lambda x : phi_0 + U0 * x[0] - x_1
+
+            p_0 = 0.
+            p_1=p_0
+            cond_p_entrada = lambda x: p_0 + x[0] * 0.  # define-se p=p_0 na entrada
+            # cond_p_saida = lambda x: p_1 + x[0] * 0.  #idem para p_1 na saida
+            # p_lateral = lambda x: p_0 + x[0]*0.   #pressao e velocidade constantesa nas laterais
+            u_0=np.array([U0,0.]) #velocidade de entrada vetorial
+            u_0_m=dfem.Constant(self.malha, u_0) #velocidade de entrada como campo do dolfin
+            cond_u_entrada=lambda x: (u_0 + x[:2].T * 0.).T  # define-se u=u_0 na entrada
+            cond_u_lateral=lambda x: (u_0 + x[:2].T* 0.).T  # u nas laterais tem mesma velocidade da entrada nao perturbada, por estar afastado do obstaculo
+            cond_u_aerofolio=lambda x: (u_0 + x[:2].T * 0.).T  # Tentativa conceitualmente incorreta com velocidade nula no aerofolio
+            #Na saida, fazemos du/dx=0
+            p_in = dfem.Function(Q)
+            # p_out = dfem.Function(Q)
             u_in = dfem.Function(V)
-            u_out = dfem.Function(V)
+            # u_out = dfem.Function(V)
             u_lateral = dfem.Function(V)
-            u_in.interpolate(phi_entrada)
-            u_out.interpolate(phi_saida)
-            u_lateral.interpolate(phi_lateral)
+            u_aerofolio=dfem.Function(V)
+            p_in.interpolate(cond_p_entrada)
+            # p_out.interpolate(cond_p_saida)
+            u_in.interpolate(cond_u_entrada)
+            # u_out.interpolate(cond_u_saida)
+            u_lateral.interpolate(cond_u_lateral)
+            u_aerofolio.interpolate(cond_u_aerofolio)
+        else:
+            raise NotImplementedError("Apenas escoamentos inviscidos sao aceitos no momento!")
         tdim = self.malha.topology.dim  # dimensao do espaco (no caso, 2D)
         fdim = tdim - 1  # dimensao do contorno (no caso, 1D)
         boundary_facets = dmesh.exterior_facet_indices(self.malha.topology)  # indices dos segmentos dos contornos
@@ -173,41 +198,93 @@ class SolucaoEscoamento :
         contornos_externos = np.concatenate([contorno_superior, contorno_inferior, contorno_entrada, contorno_saida])
         self.contorno_aerofolio = np.setdiff1d(boundary_dofs, contornos_externos)
         # TODO definir contorno do aerofolio geometricamente
-
-        bc_entrada = dfem.dirichletbc(u_in, contorno_entrada)  # aplica a condicao de contorno de Dirichlet com valor u_in
-        bc_saida = dfem.dirichletbc(u_out, contorno_saida)  # aplica a condicao de contorno de Dirichlet com valor u_out
-        bc_superior = dfem.dirichletbc(u_lateral, contorno_superior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
-        bc_inferior = dfem.dirichletbc(u_lateral, contorno_inferior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
-
-        uh = dfem.Function(V)
+        ### Condicoes de contorno de dirichlet para velocidade
+        bc_entrada_V = dfem.dirichletbc(u_in, contorno_entrada)  # aplica a condicao de contorno de Dirichlet com valor u_in
+        # bc_saida_V = dfem.dirichletbc(u_out, contorno_saida)  # aplica a condicao de contorno de Dirichlet com valor u_out
+        bc_superior_V = dfem.dirichletbc(u_lateral, contorno_superior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
+        bc_inferior_V = dfem.dirichletbc(u_lateral, contorno_inferior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
+        bc_aaerofolio_V = dfem.dirichletbc(u_aerofolio, self.contorno_aerofolio)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
+        condicoes_V=[bc_entrada_V, bc_superior_V, bc_inferior_V, bc_aaerofolio_V]
+        u = ufl.TrialFunction(V)
         v = ufl.TestFunction(V)
-        
+
+        ##Condicoes de contorno de dirichlet para a pressao
+        bc_entrada_p = dfem.dirichletbc(p_in, contorno_entrada)  # aplica a condicao de contorno de Dirichlet com valor p_in
+        condicoes_Q=[bc_entrada_p]
+        p=ufl.TrialFunction(Q)
+        q=ufl.TestFunction(Q)
+
+        n= ufl.FacetNormal(self.malha)
+
         #TODO refazer essa parte com u em vez de phi
-        a = ufl.dot(ufl.grad(phi), ufl.grad(v)) * ufl.dx  # define a forma bilinear a(u,v) = \int_\Omega \del psi * \del v dx
-        coord = ufl.SpatialCoordinate(self.malha)
+        t_0=0
+        t_1=10
+        dt=0.1
+        tempos=np.arange(t_0+dt,t_1+dt,dt)
+        if caso=="inviscido":
+            ##No passo 0, supomos p e u constantes na extensao do escoamento
+            A_u_ast=ufl.dot(u,v)*ufl.dx
+            L_u_ast=ufl.dot(u_0_m,v)*ufl.dx
+            problema_inicial_u=dfem.petsc.LinearProblem(A_u_ast,L_u_ast,bcs=condicoes_V)
+            u_inicial=problema_inicial_u.solve()
+            p_inicial=dfem.Function(Q)
+            p_inicial.interpolate(p_in)
+            u_n=u_inicial
+            p_n=p_inicial
+            ##Escrevendo os resultados em arquivo
 
-        L = (coord[0] - coord[0]) * v * ufl.ds  # a forma linear nesse caso desaparece, pois as condicoes de contorno nas paredes, entrada e saida sao Dirichlet, e no aerofolio e von Neumann
-        F = a - L  # define a forma variacional F(u,v) = a(u,v) - L(v) = 0 #TODO escrever diretamente a expressao de F
-        problema = dfem.petsc.NonlinearProblem(F, uh, bcs=[bc_entrada, bc_saida, bc_superior,  bc_inferior])
-        ##Definicao do solver nao linear por metodo de Newton
-        solver = dnls.NewtonSolver(MPI.COMM_WORLD, problema)
-        solver.convergence_criterion = "incremental"
-        solver.rtol = 1e-6
-        solver.report=True
-        n_it, convergencia = problema.solve()  # resolve o sistema pelo metodo nao-linear
+            # vtk_u=dio.VTKFile(self.malha.comm, "Saida/EF1/u.vtk", "w")
+            # vtk_p=dio.VTKFile(self.malha.comm, "Saida/EF1/p.vtk", "w")
+            # vtk_u.write_mesh(self.malha)
+            # vtk_u.write_function(u_n, 0)
+            # vtk_p.write_mesh(self.malha)
+            # vtk_p.write_function(p_n, 0)
 
-        # ##Interpretando os dados
-        # vetor = phi_h.vector.array
-        # x = malha.geometry.x[:, 0]
-        # y = malha.geometry.x[:, 1]
-        # plt.figure()
-        # plt.scatter(x, y, c=vetor)
-        self.u=uh
+            for t in tempos:
+                print(t)
+                ##Passo 1: encontrar a velocidade tentativa u_ast (ast=asterisco)
+                A_u_ast=1/dt*ufl.dot(u,v)*ufl.dx
+                L_u_ast=1/dt*ufl.dot(u_n,v)*ufl.dx-ufl.dot(ufl.dot(u_n, ufl.nabla_grad(u_n)), v)*ufl.dx -ufl.dot(ufl.grad(p_n), v)*ufl.dx
+                passo_1=dfem.petsc.LinearProblem(A_u_ast,L_u_ast,bcs=condicoes_V)
+                u_ast= passo_1.solve()
+                ##Passo 2: encontrar a pressao no passo n+1
+                A_p=ufl.dot(ufl.grad(p),ufl.grad(q))*ufl.dx-q*ufl.dot(ufl.grad(p), n)*ufl.ds
+                L_p=ufl.dot(ufl.grad(p_n),ufl.grad(q))*ufl.dx-q*ufl.dot(ufl.grad(p_n), n)*ufl.ds - 1/dt*q*ufl.div(u_ast)*ufl.dx
+                passo_2=dfem.petsc.LinearProblem(A_p,L_p,bcs=condicoes_Q)
+                p_novo=passo_2.solve()
+                ##Passo 3: encontrar a velocidade no passo n+1
+                A_u=1/dt*ufl.dot(u,v)*ufl.dx
+                L_u=1/dt*ufl.dot(u_ast,v)*ufl.dx +ufl.dot(ufl.grad(p_n),v)*ufl.dx -ufl.dot(ufl.grad(p_novo), v)*ufl.dx
+                passo_3=dfem.petsc.LinearProblem(A_u,L_u,bcs=condicoes_V)
+                u_novo=passo_3.solve()
+
+                u_n.interpolate(u_novo)
+                p_n.interpolate(p_novo)
+                ##Escrevendo os resultados em arquivo
+                if t%0.5==0:
+                    pass
+                    # vtk_u.write_function(u_n, t)
+                    # vtk_p.write_function(p_n, t)
+        else:
+            raise NotImplementedError("Apenas escoamentos inviscidos sao aceitos no momento!")
+
+        # ##Definicao do solver nao linear por metodo de Newton
+        # solver = dnls.NewtonSolver(MPI.COMM_WORLD, problema)
+        # solver.convergence_criterion = "incremental"
+        # solver.rtol = 1e-6
+        # solver.report=True
+        # n_it, convergencia = problema.solve()  # resolve o sistema pelo metodo nao-linear
+        ##Armazenando os resultados como atributos da classe
+        self.u=u_n
+        self.p=p_n
         self.val_u=self.u.vector.array
+        self.val_p=self.p.vector.array
         self.x=self.malha.geometry.x
 
     def interpola_solucao(self, n_pontos):
         '''Calcula a solucao da funcao potencial em uma malha regular de pontos'''
+        #TODO implementar sem usar funcao potencial
+        raise NotImplementedError("Funcao ainda esta configurada para usar escoamento potencial")
         x_1, y_1 = self.limites[0]
         x_2, y_2 = self.limites[1]
         self.malha_solucao=dmesh.create_rectangle(MPI.COMM_WORLD, [[x_1, y_1], [x_2, y_2]], [n_pontos, n_pontos], dmesh.CellType.quadrilateral)
@@ -238,7 +315,8 @@ class SolucaoEscoamento :
 
     def calcula_forcas(self):
         '''Calcula as forcas de sustentacao e arrasto e momento produzidas pela pressao'''
-        #TODO implementar
+        #TODO implementar sem usar funcao potencial
+        raise NotImplementedError("Funcao ainda esta configurada para usar escoamento potencial")
         lista_pontos=np.concatenate((self.indices_contorno, self.indices_contorno[0:1])) #da um loop completo, repetindo o ponto zero
         x, y, z=self.x[lista_pontos].T
         dx=x[1:]-x[:-1]
@@ -263,7 +341,7 @@ class SolucaoEscoamento :
         self.F_D, self.F_L=self.forca #forcas de sustentacao e arrasto por unidade de massa especifica do fluido
         self.M=momentos.sum() #momento em relacao ao centro do aerofolio por unidade de massa especifica do fluido
         return self.F_L, self.F_D, self.M
-    ##TODO debugar e entender por que F_L esta dando baixo. POde ser um problema com o vetor normal
+
 
     def linha_corrente(self, ponto_inicial):
         ##TODO tracar linha de corrente a partir da velocidade em cada ponto
@@ -425,8 +503,8 @@ if __name__ == "__main__" :
     import AerofolioFino
 
     aerofolio = AerofolioFino.AerofolioFinoNACA4([0.04, 0.4, 0.01], 0, 100)
-    nome_malha=malha_aerofolio(aerofolio, nome_modelo="NACA fino", n_pontos_contorno=1000)
-    # nome_malha = 'Malha/NACA4412.msh'
+    # nome_malha=malha_aerofolio(aerofolio, nome_modelo="NACA fino", n_pontos_contorno=1000)
+    nome_malha = 'Malha/NACA4412.msh'
     solucao = SolucaoEscoamento(aerofolio, nome_malha, n_pontos_contorno=1000, gerar_malha=False)
     solucao.ordena_contorno()
     print(solucao.calcula_forcas())
