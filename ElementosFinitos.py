@@ -6,6 +6,9 @@ dlog.set_log_level(dlog.LogLevel(0))
 from dolfinx import mesh as dmesh
 import dolfinx.io as dio
 from dolfinx import fem as dfem
+from dolfinx.fem import petsc as dpetsc
+dppetsc=dpetsc.PETSc #estamos usando o pestsc do dolfin, em vez do petsc4py (isso eh um problema?)
+##TODO consertar petsc
 from dolfinx import nls as dnls
 import dolfinx
 import numpy as np
@@ -116,6 +119,10 @@ def desenha_aerofolio(pontos_sup, pontos_inf) :
     eixo.set_ylim(-0.55, 0.55)
     plt.show(block=False)
 
+def exporta_valores(u, t, malha, path):
+    '''Exporta os valores de u para um arquivo .csv'''
+
+    return
 
 def calculo_aerofolio(aerofolio) :
     '''
@@ -125,18 +132,17 @@ def calculo_aerofolio(aerofolio) :
     ##TODO implementar
 
     nome_arquivo = malha_aerofolio(aerofolio, aerofolio.nome)
-    psi_h = solucao_escoamento(aerofolio, nome_arquivo)
-    # TODO calcular as propriedades aerodinamicas
-    print(psi_h)
+
 
 class SolucaoEscoamento :
-    def __init__(self, aerofolio, nome_malha, n_pontos_contorno=n_pontos_contorno_padrao, gerar_malha=True) :
+    def __init__(self, aerofolio, nome_malha, viscosidade=1, n_pontos_contorno=n_pontos_contorno_padrao, gerar_malha=True, caso="inviscido") :
         self.aerofolio=aerofolio
         self.n_pontos_contorno=n_pontos_contorno
+        self.viscosidade=viscosidade #viscosidade cinematica do fluido
         if gerar_malha :
             nome_malha=malha_aerofolio(aerofolio, nome_malha, n_pontos_contorno)
 
-        self.resolve_escoamento(aerofolio, nome_malha)
+        self.resolve_escoamento(aerofolio, nome_malha, caso=caso)
 
     def resolve_escoamento(self, aerofolio, nome_malha, caso="inviscido"):
         '''Resolve o escoamento em torno de um aerofolio a partir da malha gerada pelo gmsh.
@@ -145,7 +151,6 @@ class SolucaoEscoamento :
             :param malha: nome do arquivo da malha gerada pelo gmsh
             :param caso: ("inviscido", "viscoso"). Define o tipo de escoamento
             '''
-        ##TODO reescrever sem supor escoamento potencial (escoamentos potenciais sao irrotacionais, logo nao havera sustentacao)
         y_1, y_2 = -1., 1.
         x_1, x_2 = -2., 3.
         self.limites= [[x_1, y_1], [x_2, y_2]]
@@ -153,7 +158,8 @@ class SolucaoEscoamento :
         alfa = aerofolio.alfa
         self.malha, self.cell_tags, self.facet_tags = dio.gmshio.read_from_msh(nome_malha, MPI.COMM_WORLD, rank=0, gdim=2)
 
-        v_cg2 = ufl.VectorElement("Lagrange", self.malha.ufl_cell(), 2)  # elemento vetorial de Lagrange de ordem 2, ligado a velocidade
+
+        v_cg2 = ufl.VectorElement("Lagrange", self.malha.ufl_cell(), 2, dim=2)  # elemento vetorial de Lagrange de ordem 2, ligado a velocidade
         q_cg1 = ufl.FiniteElement("Lagrange", self.malha.ufl_cell(), 1)  # elemento escalar de Lagrange de ordem 1, ligado a pressao
         V = dfem.FunctionSpace(self.malha, v_cg2)  # Espaco de funcao da velocidade
         Q = dfem.FunctionSpace(self.malha, q_cg1)  # Espaco de funcao da pressao
@@ -179,6 +185,27 @@ class SolucaoEscoamento :
             # u_out = dfem.Function(V)
             u_lateral = dfem.Function(V)
             u_aerofolio=dfem.Function(V)
+            p_in.interpolate(cond_p_entrada)
+            # p_out.interpolate(cond_p_saida)
+            u_in.interpolate(cond_u_entrada)
+            # u_out.interpolate(cond_u_saida)
+            u_lateral.interpolate(cond_u_lateral)
+            u_aerofolio.interpolate(cond_u_aerofolio)
+        elif caso=="viscoso":
+            p_0 = 0.
+            cond_p_entrada = lambda x: p_0 + x[0] * 0.  # define-se p=p_0 na entrada
+            u_0 = np.array([U0, 0.])  # velocidade de entrada vetorial
+            u_0_m = dfem.Constant(self.malha, u_0)  # velocidade de entrada como campo do dolfin
+            cond_u_entrada = lambda x: (u_0 + x[:2].T * 0.).T  # define-se u=u_0 na entrada
+            cond_u_lateral = lambda x: (u_0 + x[:2].T * 0.).T  # u nas laterais tem mesma velocidade da entrada nao perturbada, por estar afastado do obstaculo
+            cond_u_aerofolio = lambda x: (u_0 + x[:2].T * 0.).T  # Tentativa conceitualmente incorreta com velocidade nula no aerofolio
+            # Na saida, fazemos du/dx=0
+            p_in = dfem.Function(Q)
+            # p_out = dfem.Function(Q)
+            u_in = dfem.Function(V)
+            # u_out = dfem.Function(V)
+            u_lateral = dfem.Function(V)
+            u_aerofolio = dfem.Function(V)
             p_in.interpolate(cond_p_entrada)
             # p_out.interpolate(cond_p_saida)
             u_in.interpolate(cond_u_entrada)
@@ -216,57 +243,140 @@ class SolucaoEscoamento :
 
         n= ufl.FacetNormal(self.malha)
 
-        #TODO refazer essa parte com u em vez de phi
         t_0=0
         t_1=10
         dt=0.1
         tempos=np.arange(t_0+dt,t_1+dt,dt)
+
+        ##No passo 0, supomos p e u constantes na extensao do escoamento
+        A_u_ast = ufl.dot(u, v) * ufl.dx
+        L_u_ast = ufl.dot(u_0_m, v) * ufl.dx
+
+        problema_inicial_u = dpetsc.LinearProblem(A_u_ast, L_u_ast, bcs=condicoes_V)
+        u_inicial = problema_inicial_u.solve()
+        p_inicial = dfem.Function(Q)
+        p_inicial.interpolate(p_in)
+        u_n = u_inicial
+        p_n = p_inicial
+        ##Variaveis de solucao
+        u_ast = dfem.Function(V)
+        p_novo = dfem.Function(Q)
+        u_novo = dfem.Function(V)
         if caso=="inviscido":
-            ##No passo 0, supomos p e u constantes na extensao do escoamento
-            A_u_ast=ufl.dot(u,v)*ufl.dx
-            L_u_ast=ufl.dot(u_0_m,v)*ufl.dx
-            problema_inicial_u=dfem.petsc.LinearProblem(A_u_ast,L_u_ast,bcs=condicoes_V)
-            u_inicial=problema_inicial_u.solve()
-            p_inicial=dfem.Function(Q)
-            p_inicial.interpolate(p_in)
-            u_n=u_inicial
-            p_n=p_inicial
-            ##Escrevendo os resultados em arquivo
 
-            # vtk_u=dio.VTKFile(self.malha.comm, "Saida/EF1/u.vtk", "w")
-            # vtk_p=dio.VTKFile(self.malha.comm, "Saida/EF1/p.vtk", "w")
-            # vtk_u.write_mesh(self.malha)
-            # vtk_u.write_function(u_n, 0)
-            # vtk_p.write_mesh(self.malha)
-            # vtk_p.write_function(p_n, 0)
 
-            for t in tempos:
-                print(t)
-                ##Passo 1: encontrar a velocidade tentativa u_ast (ast=asterisco)
-                A_u_ast=1/dt*ufl.dot(u,v)*ufl.dx
-                L_u_ast=1/dt*ufl.dot(u_n,v)*ufl.dx-ufl.dot(ufl.dot(u_n, ufl.nabla_grad(u_n)), v)*ufl.dx -ufl.dot(ufl.grad(p_n), v)*ufl.dx
-                passo_1=dfem.petsc.LinearProblem(A_u_ast,L_u_ast,bcs=condicoes_V)
-                u_ast= passo_1.solve()
-                ##Passo 2: encontrar a pressao no passo n+1
-                A_p=ufl.dot(ufl.grad(p),ufl.grad(q))*ufl.dx-q*ufl.dot(ufl.grad(p), n)*ufl.ds
-                L_p=ufl.dot(ufl.grad(p_n),ufl.grad(q))*ufl.dx-q*ufl.dot(ufl.grad(p_n), n)*ufl.ds - 1/dt*q*ufl.div(u_ast)*ufl.dx
-                passo_2=dfem.petsc.LinearProblem(A_p,L_p,bcs=condicoes_Q)
-                p_novo=passo_2.solve()
-                ##Passo 3: encontrar a velocidade no passo n+1
-                A_u=1/dt*ufl.dot(u,v)*ufl.dx
-                L_u=1/dt*ufl.dot(u_ast,v)*ufl.dx +ufl.dot(ufl.grad(p_n),v)*ufl.dx -ufl.dot(ufl.grad(p_novo), v)*ufl.dx
-                passo_3=dfem.petsc.LinearProblem(A_u,L_u,bcs=condicoes_V)
-                u_novo=passo_3.solve()
+            ##Definindo matriz e vetor que representam o problema
 
-                u_n.interpolate(u_novo)
-                p_n.interpolate(p_novo)
-                ##Escrevendo os resultados em arquivo
-                if t%0.5==0:
-                    pass
-                    # vtk_u.write_function(u_n, t)
-                    # vtk_p.write_function(p_n, t)
+            #Passo 1
+            A_u_ast = 1 / dt * ufl.dot(u, v) * ufl.dx
+            L_u_ast = 1 / dt * ufl.dot(u_n, v) * ufl.dx - ufl.dot(ufl.dot(u_n, ufl.nabla_grad(u_n)), v) * ufl.dx - ufl.dot(ufl.grad(p_n), v) * ufl.dx
+
+            #Passo 2
+            A_p = ufl.dot(ufl.grad(p), ufl.grad(q)) * ufl.dx - q * ufl.dot(ufl.grad(p), n) * ufl.ds
+            L_p = ufl.dot(ufl.grad(p_n), ufl.grad(q)) * ufl.dx - q * ufl.dot(ufl.grad(p_n), n) * ufl.ds - 1 / dt * q * ufl.div(u_ast) * ufl.dx
+
+            #Passo 3
+            A_u = 1 / dt * ufl.dot(u, v) * ufl.dx
+            L_u = 1 / dt * ufl.dot(u_ast, v) * ufl.dx + ufl.dot(ufl.grad(p_n), v) * ufl.dx - ufl.dot(ufl.grad(p_novo), v) * ufl.dx
+
+        elif caso=="viscoso":
+            def epsilon(x):
+                return ufl.sym(ufl.nabla_grad(x))
+            def sigma(x,y):
+                return 2*self.viscosidade*epsilon(x)-y*ufl.Identity(2)
+            u_intermediario=0.5*(u_n+u) #velocidade intermediaria entre u_n anterior e u_ast
+
+            F= 1 / dt * ufl.dot(u, v) * ufl.dx - 1 / dt * ufl.dot(u_n, v) * ufl.dx +ufl.dot(ufl.dot(u_n,ufl.nabla_grad(u_n)), v)*ufl.dx+ufl.inner(sigma(u_intermediario,p_n), epsilon(v))*ufl.dx+ufl.dot(p_n*n,v)*ufl.ds-ufl.dot(self.viscosidade*ufl.nabla_grad(u_n)*n,v)*ufl.ds
+            A_u_ast=ufl.lhs(F)
+            L_u_ast=ufl.rhs(F)
+
+            #Passo 2
+            A_p = ufl.dot(ufl.grad(p), ufl.grad(q)) * ufl.dx - q * ufl.dot(ufl.grad(p), n) * ufl.ds
+            L_p = ufl.dot(ufl.grad(p_n), ufl.grad(q)) * ufl.dx - q * ufl.dot(ufl.grad(p_n), n) * ufl.ds - 1 / dt * q * ufl.div(u_ast) * ufl.dx
+            #Passo 3
+            A_u = 1 / dt * ufl.dot(u, v) * ufl.dx
+            L_u = 1 / dt * ufl.dot(u_ast, v) * ufl.dx + ufl.dot(ufl.grad(p_n), v) * ufl.dx - ufl.dot(ufl.grad(p_novo), v) * ufl.dx
+
         else:
             raise NotImplementedError("Apenas escoamentos inviscidos sao aceitos no momento!")
+        ##Passo 1
+        bilinear1 = dfem.form(A_u_ast)
+        linear1 = dfem.form(L_u_ast)
+        A1 = dpetsc.assemble_matrix(bilinear1, bcs=condicoes_V)
+        A1.assemble()
+        b1 = dpetsc.create_vector(linear1)
+        solver1 = dppetsc.KSP().create(self.malha.comm)
+        solver1.setOperators(A1)
+        solver1.setType(dppetsc.KSP.Type.PREONLY)
+        solver1.getPC().setType(dppetsc.PC.Type.LU)
+        ##Passo 2
+        bilinear2 = dfem.form(A_p)
+        A2 = dpetsc.assemble_matrix(bilinear2, bcs=condicoes_Q)
+        A2.assemble()
+        linear2 = dfem.form(L_p)
+        b2 = dpetsc.create_vector(linear2)
+        solver2 = dppetsc.KSP().create(self.malha.comm)
+        solver2.setOperators(A2)
+        solver2.setType(dppetsc.KSP.Type.PREONLY)
+        solver2.getPC().setType(dppetsc.PC.Type.LU)
+        ##Passo 3
+        bilinear3 = dfem.form(A_u)
+        A3 = dpetsc.assemble_matrix(bilinear3, bcs=condicoes_V)
+        A3.assemble()
+        linear3 = dfem.form(L_u)
+        b3 = dpetsc.create_vector(linear3)
+        solver3 = dppetsc.KSP().create(self.malha.comm)
+        solver3.setOperators(A3)
+        solver3.setType(dppetsc.KSP.Type.PREONLY)
+        solver3.getPC().setType(dppetsc.PC.Type.LU)
+        # Escrevendo os resultados em arquivo
+        vtk_u = dio.VTKFile(self.malha.comm, "Saida/EF1/u.vtk", "w")
+        vtk_p = dio.VTKFile(self.malha.comm, "Saida/EF1/p.vtk", "w")
+        vtk_u.write_mesh(self.malha)
+        vtk_u.write_function(u_n, 0)
+        vtk_p.write_mesh(self.malha)
+        vtk_p.write_function(p_n, 0)
+        for t in tempos:
+            print(t)
+            ##Passo 1: encontrar a velocidade tentativa u_ast (ast=asterisco)
+            ##Tentativa de reutilizar as matrizes de solucao
+            # Update the right hand side reusing the initial vector
+            with b1.localForm() as loc_b:
+                loc_b.set(0)
+            dpetsc.assemble_vector(b1, linear1)
+            # Apply Dirichlet boundary condition to the vector
+            dpetsc.apply_lifting(b1, [bilinear1], [condicoes_V])
+            b1.ghostUpdate(addv=dppetsc.InsertMode.ADD_VALUES, mode=dppetsc.ScatterMode.REVERSE)
+            dfem.set_bc(b1, condicoes_V)
+            # Solve linear problem
+            solver1.solve(b1, u_ast.vector)
+            u_ast.x.scatter_forward()
+            ##Passo 2: encontrar a pressao no passo n+1
+            with b2.localForm() as loc_b:
+                loc_b.set(0)
+            dpetsc.assemble_vector(b2, linear2)
+            dpetsc.apply_lifting(b2, [bilinear2], [condicoes_Q])
+            b2.ghostUpdate(addv=dppetsc.InsertMode.ADD_VALUES, mode=dppetsc.ScatterMode.REVERSE)
+            dfem.set_bc(b2, condicoes_Q)
+            solver2.solve(b2, p_novo.vector)
+            p_novo.x.scatter_forward()
+
+            ##Passo 3: encontrar a velocidade no passo n+1
+            with b3.localForm() as loc_b:
+                loc_b.set(0)
+            dpetsc.assemble_vector(b3, linear3)
+            dpetsc.apply_lifting(b3, [bilinear3], [condicoes_V])
+            b3.ghostUpdate(addv=dppetsc.InsertMode.ADD_VALUES, mode=dppetsc.ScatterMode.REVERSE)
+            dfem.set_bc(b3, condicoes_V)
+            solver3.solve(b3, u_novo.vector)
+            u_novo.x.scatter_forward()
+
+            u_n.interpolate(u_novo)
+            p_n.interpolate(p_novo)
+            ##Escrevendo os resultados em arquivo
+            if np.isclose(t%0.5,0):
+                vtk_u.write_function(u_n, t)
+                vtk_p.write_function(p_n, t)
 
         # ##Definicao do solver nao linear por metodo de Newton
         # solver = dnls.NewtonSolver(MPI.COMM_WORLD, problema)
@@ -348,13 +458,6 @@ class SolucaoEscoamento :
         pass
 
 
-
-
-
-
-
-
-
 def solucao_escoamento(aerofolio, nome_malha, n_pontos_contorno=n_pontos_contorno_padrao) :
     '''Resolve o escoamento em torno de um aerofolio a partir da malha gerada pelo gmsh.
     Retorna a funcao potencial como um campo do dolfin
@@ -401,7 +504,7 @@ def solucao_escoamento(aerofolio, nome_malha, n_pontos_contorno=n_pontos_contorn
     coord = ufl.SpatialCoordinate(malha)
     L = (coord[0] - coord[
         0]) * v * ufl.ds  # a forma linear nesse caso desaparece, pois as condicoes de contorno nas paredes, entrada e saida sao Dirichlet, e no aerofolio e von Neumann
-    problema = dfem.petsc.LinearProblem(a, L, bcs=[bc_entrada, bc_saida, bc_superior,
+    problema = dpetsc.LinearProblem(a, L, bcs=[bc_entrada, bc_saida, bc_superior,
                                                    bc_inferior], petsc_options={"ksp_type" : "preonly", "pc_type" : "lu"})  # fatoracao LU para solucao da matriz
     phi_h = problema.solve()  # resolve o sistema e retorna a funcao-solucao
 
@@ -424,94 +527,306 @@ def solucao_escoamento(aerofolio, nome_malha, n_pontos_contorno=n_pontos_contorn
 
 
 def exemplo() :
-    # from dolfinx.fem import FunctionSpace
-    ##Vamos resolver a equacao de Poisson: \del² u = f
-    ##O problema foi manufaturado com f=-6 para ter solucao exata u = 1+x²+2y²
-    domain = dmesh.create_unit_square(MPI.COMM_WORLD, 8, 8, dmesh.CellType.triangle)
-    V = dfem.FunctionSpace(domain, ("CG", 2))  ##CG eh a familia de polinomios interpoladores de Lagrange, 2 eh a ordem do polinomio
-    uD = dfem.Function(V)
-    funcao_contorno = lambda x : 1 + x[0] ** 2 + 2 * x[1] ** 2
-    uD.interpolate(funcao_contorno)
-    tdim = domain.topology.dim  # dimensao do espaco (no caso, 2D)
-    fdim = tdim - 1  # dimensao do contorno (no caso, 1D)
-    domain.topology.create_connectivity(fdim, tdim)
-    boundary_facets = dmesh.exterior_facet_indices(domain.topology)  # indices dos segmentos dos contornos
-    boundary_dofs = fem.locate_dofs_topological(V, fdim, boundary_facets)  # indices dos graus de liberdade dos segmentos dos contornos
-    bc = fem.dirichletbc(uD, boundary_dofs)  # aplica a condicao de contorno de Dirichlet com valor uD
-    u = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    # funcao que coloca um escalar no type correto (e.g. np.float64)
-    f = fem.Constant(domain, ScalarType(-6))  # define f como uma constante -6
-    a = ufl.dot(ufl.grad(u), ufl.grad(v)) * ufl.dx  # define a forma bilinear a(u,v) = \int_\Omega \del u * \del v dx
-    L = f * v * ufl.dx  # define a forma linear L(v) = \int_\Omega f*v dx
-    # ufl.dot eh o produto matricial ou produto escalar entre 2 vetores
-    problem = fem.petsc.LinearProblem(a, L, bcs=[bc], petsc_options={"ksp_type" : "preonly", "pc_type" : "lu"})  # fatoracao LU para solucao da matriz
-    uh = problem.solve()  # resolve o sistema e retorna a funcao-solucao
+    import gmsh
+    import os
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import tqdm.autonotebook
 
-    V2 = fem.FunctionSpace(domain, ("CG", 1))  # define outro dominio para avaliar o erro
-    uex = fem.Function(V2)
-    solucao_analitica = lambda x : 1 + x[0] ** 2 + 2 * x[1] ** 2
-    uex.interpolate(solucao_analitica)
-    L2_error = fem.form(ufl.inner(uh - uex, uh - uex) * ufl.dx)  # calcula o erro quadratico L2 entre a solucao numerica e a analitica
-    error_local = fem.assemble_scalar(L2_error)  # calcula o valor escalar do erro no processo local
-    error_global = np.sqrt(domain.comm.allreduce(error_local, op=MPI.SUM))  # soma os erros de todos os processos e tira a raiz quadrada
-    error_max = np.max(np.abs(uD.x.array - uh.x.array))  # maximo erro em um grau de liberdade do contorno
-    print(f"Erro L2: {error_global:.2e} \nErro maximo: {error_max:.2e}")
+    from mpi4py import MPI
+    from petsc4py import PETSc
 
-    ##Exportacao para o Paraview ##TODO debugar
-    from dolfinx import io
-    # with io.VTXWriter(domain.comm, "output.bp", [uh]) as vtx:
-    #     vtx.write(0.0)
-    with io.XDMFFile(domain.comm, os.path.join("Saida", "output.xdmf"), "w") as xdmf :
-        xdmf.write_mesh(domain)
-        xdmf.write_function(uh)
+    from dolfinx.cpp.mesh import to_type, cell_entity_type
+    from dolfinx.fem import (Constant, Function, FunctionSpace,
+                             assemble_scalar, dirichletbc, form, locate_dofs_topological, set_bc)
+    from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
+                                   create_vector, create_matrix, set_bc)
+    from dolfinx.graph import adjacencylist
+    from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
+    # from dolfinx.io import (VTXWriter, distribute_entity_data, gmshio)
+    from dolfinx.io import distribute_entity_data, gmshio
+    from dolfinx.mesh import create_mesh, meshtags_from_entities
 
-    ##Visualizacao de resultados
-    import pyvista
-    print(pyvista.global_theme.jupyter_backend)
-    import dolfinx.plot
-    pyvista.start_xvfb()
-    topology, cell_types, geometry = dolfinx.plot.create_vtk_mesh(domain, domain.topology.dim)  # cria a malha em formato VTK para visualizacao no pyvista
-    grid = pyvista.UnstructuredGrid(topology, cell_types, geometry)  # cria o grid
-    pyplotter = pyvista.Plotter()  # cria o objeto plotter
-    pyplotter.add_mesh(grid, show_edges=True)  # adiciona a malha ao plotter
-    pyplotter.view_xy()
-    ##TODO debugar o pyvista
-    if not pyvista.OFF_SCREEN :
-        pyplotter.show()  # mostra a malha
-    else :
-        fig = pyplotter.screenshot(os.path.join("Saida", "malha.png"), )  # salva a malha em um arquivo png
+    from ufl import (FacetNormal, FiniteElement, Identity, Measure, TestFunction, TrialFunction, VectorElement,
+                     as_vector, div, dot, ds, dx, inner, lhs, grad, nabla_grad, rhs, sym)
 
-    u_topology, u_cell_types, u_geometry = dolfinx.plot.create_vtk_mesh(V)
-    u_grid = pyvista.UnstructuredGrid(u_topology, u_cell_types, u_geometry)
-    u_grid.point_data["u"] = uh.x.array.real
-    u_grid.set_active_scalars("u")
-    u_plotter = pyvista.Plotter()
-    u_plotter.add_mesh(u_grid, show_edges=True)
-    u_plotter.view_xy()
-    if not pyvista.OFF_SCREEN :
-        u_plotter.show()
+    gmsh.initialize()
 
-    warped = u_grid.warp_by_scalar()
-    plotter2 = pyvista.Plotter()
-    plotter2.add_mesh(warped, show_edges=True, show_scalar_bar=True)
-    if not pyvista.OFF_SCREEN :
-        plotter2.show()
+    L = 2.2
+    H = 0.41
+    c_x = c_y = 0.2
+    r = 0.05
+    gdim = 2
+    mesh_comm = MPI.COMM_WORLD
+    model_rank = 0
+    if mesh_comm.rank == model_rank:
+        rectangle = gmsh.model.occ.addRectangle(0, 0, 0, L, H, tag=1)
+        obstacle = gmsh.model.occ.addDisk(c_x, c_y, 0, r, r)
+    fluid_marker = 1
+    if mesh_comm.rank == model_rank:
+        volumes = gmsh.model.getEntities(dim=gdim)
+        assert (len(volumes) == 1)
+        gmsh.model.addPhysicalGroup(volumes[0][0], [volumes[0][1]], fluid_marker)
+        gmsh.model.setPhysicalName(volumes[0][0], fluid_marker, "Fluid")
+    inlet_marker, outlet_marker, wall_marker, obstacle_marker = 2, 3, 4, 5
+    inflow, outflow, walls, obstacle = [], [], [], []
+    if mesh_comm.rank == model_rank:
+        boundaries = gmsh.model.getBoundary(volumes, oriented=False)
+        for boundary in boundaries:
+            center_of_mass = gmsh.model.occ.getCenterOfMass(boundary[0], boundary[1])
+            if np.allclose(center_of_mass, [0, H / 2, 0]):
+                inflow.append(boundary[1])
+            elif np.allclose(center_of_mass, [L, H / 2, 0]):
+                outflow.append(boundary[1])
+            elif np.allclose(center_of_mass, [L / 2, H, 0]) or np.allclose(center_of_mass, [L / 2, 0, 0]):
+                walls.append(boundary[1])
+            else:
+                obstacle.append(boundary[1])
+        gmsh.model.addPhysicalGroup(1, walls, wall_marker)
+        gmsh.model.setPhysicalName(1, wall_marker, "Walls")
+        gmsh.model.addPhysicalGroup(1, inflow, inlet_marker)
+        gmsh.model.setPhysicalName(1, inlet_marker, "Inlet")
+        gmsh.model.addPhysicalGroup(1, outflow, outlet_marker)
+        gmsh.model.setPhysicalName(1, outlet_marker, "Outlet")
+        gmsh.model.addPhysicalGroup(1, obstacle, obstacle_marker)
+        gmsh.model.setPhysicalName(1, obstacle_marker, "Obstacle")
+    # Create distance field from obstacle.
+    # Add threshold of mesh sizes based on the distance field
+    # LcMax -                  /--------
+    #                      /
+    # LcMin -o---------/
+    #        |         |       |
+    #       Point    DistMin DistMax
+    res_min = r / 3
+    if mesh_comm.rank == model_rank:
+        distance_field = gmsh.model.mesh.field.add("Distance")
+        gmsh.model.mesh.field.setNumbers(distance_field, "EdgesList", obstacle)
+        threshold_field = gmsh.model.mesh.field.add("Threshold")
+        gmsh.model.mesh.field.setNumber(threshold_field, "IField", distance_field)
+        gmsh.model.mesh.field.setNumber(threshold_field, "LcMin", res_min)
+        gmsh.model.mesh.field.setNumber(threshold_field, "LcMax", 0.25 * H)
+        gmsh.model.mesh.field.setNumber(threshold_field, "DistMin", r)
+        gmsh.model.mesh.field.setNumber(threshold_field, "DistMax", 2 * H)
+        min_field = gmsh.model.mesh.field.add("Min")
+        gmsh.model.mesh.field.setNumbers(min_field, "FieldsList", [threshold_field])
+        gmsh.model.mesh.field.setAsBackgroundMesh(min_field)
+    if mesh_comm.rank == model_rank:
+        gmsh.option.setNumber("Mesh.Algorithm", 8)
+        gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
+        gmsh.option.setNumber("Mesh.RecombineAll", 1)
+        gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 1)
+        gmsh.model.mesh.generate(gdim)
+        gmsh.model.mesh.setOrder(2)
+        gmsh.model.mesh.optimize("Netgen")
+    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, mesh_comm, model_rank, gdim=gdim)
+    ft.name = "Facet markers"
+    t = 0
+    T = 8  # Final time
+    dt = 1 / 1600  # Time step size
+    num_steps = int(T / dt)
+    k = Constant(mesh, PETSc.ScalarType(dt))
+    mu = Constant(mesh, PETSc.ScalarType(0.001))  # Dynamic viscosity
+    rho = Constant(mesh, PETSc.ScalarType(1))  # Density
+    v_cg2 = VectorElement("Lagrange", mesh.ufl_cell(), 2)
+    s_cg1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
+    V = FunctionSpace(mesh, v_cg2)
+    Q = FunctionSpace(mesh, s_cg1)
+
+    fdim = mesh.topology.dim - 1
+
+    # Define boundary conditions
+
+    class InletVelocity():
+        def __init__(self, t):
+            self.t = t
+
+        def __call__(self, x):
+            values = np.zeros((gdim, x.shape[1]), dtype=PETSc.ScalarType)
+            values[0] = 4 * 1.5 * np.sin(self.t * np.pi / 8) * x[1] * (0.41 - x[1]) / (0.41 ** 2)
+            return values
+
+    # Inlet
+    u_inlet = Function(V)
+    inlet_velocity = InletVelocity(t)
+    u_inlet.interpolate(inlet_velocity)
+    bcu_inflow = dirichletbc(u_inlet, locate_dofs_topological(V, fdim, ft.find(inlet_marker)))
+    # Walls
+    u_nonslip = np.array((0,) * mesh.geometry.dim, dtype=PETSc.ScalarType)
+    bcu_walls = dirichletbc(u_nonslip, locate_dofs_topological(V, fdim, ft.find(wall_marker)), V)
+    # Obstacle
+    bcu_obstacle = dirichletbc(u_nonslip, locate_dofs_topological(V, fdim, ft.find(obstacle_marker)), V)
+    bcu = [bcu_inflow, bcu_obstacle, bcu_walls]
+    # Outlet
+    bcp_outlet = dirichletbc(PETSc.ScalarType(0), locate_dofs_topological(Q, fdim, ft.find(outlet_marker)), Q)
+    bcp = [bcp_outlet]
+    u = TrialFunction(V)
+    v = TestFunction(V)
+    u_ = Function(V)
+    u_.name = "u"
+    u_s = Function(V)
+    u_n = Function(V)
+    u_n1 = Function(V)
+    p = TrialFunction(Q)
+    q = TestFunction(Q)
+    p_ = Function(Q)
+    p_.name = "p"
+    phi = Function(Q)
+    f = Constant(mesh, PETSc.ScalarType((0, 0)))
+    F1 = rho / k * dot(u - u_n, v) * dx
+    F1 += inner(dot(1.5 * u_n - 0.5 * u_n1, 0.5 * nabla_grad(u + u_n)), v) * dx
+    F1 += 0.5 * mu * inner(grad(u + u_n), grad(v)) * dx - dot(p_, div(v)) * dx
+    F1 += dot(f, v) * dx
+    a1 = form(lhs(F1))
+    L1 = form(rhs(F1))
+    A1 = create_matrix(a1)
+    b1 = create_vector(L1)
+    a2 = form(dot(grad(p), grad(q)) * dx)
+    L2 = form(-rho / k * dot(div(u_s), q) * dx)
+    A2 = assemble_matrix(a2, bcs=bcp)
+    A2.assemble()
+    b2 = create_vector(L2)
+    a3 = form(rho * dot(u, v) * dx)
+    L3 = form(rho * dot(u_s, v) * dx - k * dot(nabla_grad(phi), v) * dx)
+    A3 = assemble_matrix(a3)
+    A3.assemble()
+    b3 = create_vector(L3)
+    # Solver for step 1
+    solver1 = PETSc.KSP().create(mesh.comm)
+    solver1.setOperators(A1)
+    solver1.setType(PETSc.KSP.Type.BCGS)
+    pc1 = solver1.getPC()
+    pc1.setType(PETSc.PC.Type.JACOBI)
+
+    # Solver for step 2
+    solver2 = PETSc.KSP().create(mesh.comm)
+    solver2.setOperators(A2)
+    solver2.setType(PETSc.KSP.Type.MINRES)
+    pc2 = solver2.getPC()
+    pc2.setType(PETSc.PC.Type.HYPRE)
+    pc2.setHYPREType("boomeramg")
+
+    # Solver for step 3
+    solver3 = PETSc.KSP().create(mesh.comm)
+    solver3.setOperators(A3)
+    solver3.setType(PETSc.KSP.Type.CG)
+    pc3 = solver3.getPC()
+    pc3.setType(PETSc.PC.Type.SOR)
+    n = -FacetNormal(mesh)  # Normal pointing out of obstacle
+    dObs = Measure("ds", domain=mesh, subdomain_data=ft, subdomain_id=obstacle_marker)
+    u_t = inner(as_vector((n[1], -n[0])), u_)
+    drag = form(2 / 0.1 * (mu / rho * inner(grad(u_t), n) * n[1] - p_ * n[0]) * dObs)
+    lift = form(-2 / 0.1 * (mu / rho * inner(grad(u_t), n) * n[0] + p_ * n[1]) * dObs)
+    if mesh.comm.rank == 0:
+        C_D = np.zeros(num_steps, dtype=PETSc.ScalarType)
+        C_L = np.zeros(num_steps, dtype=PETSc.ScalarType)
+        t_u = np.zeros(num_steps, dtype=np.float64)
+        t_p = np.zeros(num_steps, dtype=np.float64)
+    tree = bb_tree(mesh, mesh.geometry.dim)
+    points = np.array([[0.15, 0.2, 0], [0.25, 0.2, 0]])
+    cell_candidates = compute_collisions_points(tree, points)
+    colliding_cells = compute_colliding_cells(mesh, cell_candidates, points)
+    front_cells = colliding_cells.links(0)
+    back_cells = colliding_cells.links(1)
+    if mesh.comm.rank == 0:
+        p_diff = np.zeros(num_steps, dtype=PETSc.ScalarType)
+    from pathlib import Path
+    folder = Path("results")
+    folder.mkdir(exist_ok=True, parents=True)
+    # vtx_u = VTXWriter(mesh.comm, "dfg2D-3-u.bp", [u_], engine="BP4")
+    # vtx_p = VTXWriter(mesh.comm, "dfg2D-3-p.bp", [p_], engine="BP4")
+    # vtx_u.write(t)
+    # vtx_p.write(t)
+    progress = tqdm.autonotebook.tqdm(desc="Solving PDE", total=num_steps)
+    for i in range(num_steps):
+        progress.update(1)
+        # Update current time step
+        t += dt
+        # Update inlet velocity
+        inlet_velocity.t = t
+        u_inlet.interpolate(inlet_velocity)
+
+        # Step 1: Tentative velocity step
+        A1.zeroEntries()
+        assemble_matrix(A1, a1, bcs=bcu)
+        A1.assemble()
+        with b1.localForm() as loc:
+            loc.set(0)
+        assemble_vector(b1, L1)
+        apply_lifting(b1, [a1], [bcu])
+        b1.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+        set_bc(b1, bcu)
+        solver1.solve(b1, u_s.vector)
+        u_s.x.scatter_forward()
+
+        # Step 2: Pressure corrrection step
+        with b2.localForm() as loc:
+            loc.set(0)
+        assemble_vector(b2, L2)
+        apply_lifting(b2, [a2], [bcp])
+        b2.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+        set_bc(b2, bcp)
+        solver2.solve(b2, phi.vector)
+        phi.x.scatter_forward()
+
+        p_.vector.axpy(1, phi.vector)
+        p_.x.scatter_forward()
+
+        # Step 3: Velocity correction step
+        with b3.localForm() as loc:
+            loc.set(0)
+        assemble_vector(b3, L3)
+        b3.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
+        solver3.solve(b3, u_.vector)
+        u_.x.scatter_forward()
+
+        # Write solutions to file
+        # vtx_u.write(t)
+        # vtx_p.write(t)
+
+        # Update variable with solution form this time step
+        with u_.vector.localForm() as loc_, u_n.vector.localForm() as loc_n, u_n1.vector.localForm() as loc_n1:
+            loc_n.copy(loc_n1)
+            loc_.copy(loc_n)
+
+        # Compute physical quantities
+        # For this to work in paralell, we gather contributions from all processors
+        # to processor zero and sum the contributions.
+        drag_coeff = mesh.comm.gather(assemble_scalar(drag), root=0)
+        lift_coeff = mesh.comm.gather(assemble_scalar(lift), root=0)
+        p_front = None
+        if len(front_cells) > 0:
+            p_front = p_.eval(points[0], front_cells[:1])
+        p_front = mesh.comm.gather(p_front, root=0)
+        p_back = None
+        if len(back_cells) > 0:
+            p_back = p_.eval(points[1], back_cells[:1])
+        p_back = mesh.comm.gather(p_back, root=0)
+        if mesh.comm.rank == 0:
+            t_u[i] = t
+            t_p[i] = t - dt / 2
+            C_D[i] = sum(drag_coeff)
+            C_L[i] = sum(lift_coeff)
+            # Choose first pressure that is found from the different processors
+            for pressure in p_front:
+                if pressure is not None:
+                    p_diff[i] = pressure[0]
+                    break
+            for pressure in p_back:
+                if pressure is not None:
+                    p_diff[i] -= pressure[0]
+                    break
+    # vtx_u.close()
+    # vtx_p.close()
 
 
 if __name__ == "__main__" :
     import AerofolioFino
 
-    aerofolio = AerofolioFino.AerofolioFinoNACA4([0.04, 0.4, 0.01], 0, 100)
-    # nome_malha=malha_aerofolio(aerofolio, nome_modelo="NACA fino", n_pontos_contorno=1000)
-    nome_malha = 'Malha/NACA4412.msh'
-    solucao = SolucaoEscoamento(aerofolio, nome_malha, n_pontos_contorno=1000, gerar_malha=False)
-    solucao.ordena_contorno()
-    print(solucao.calcula_forcas())
-    # x, phi = solucao.interpola_solucao(100)
-    # plt.scatter(x[:, 0], x[:, 1], c=phi)
-    # plt.figure()
-    # indices=solucao.ordena_contorno()
-    # plt.plot(solucao.x[indices,0], solucao.x[indices,1])
-    plt.show(block=False)
+    aerofolio = AerofolioFino.AerofolioFinoNACA4([0.04, 0.4, 0.12], 0, 1)
+    # nome_malha=malha_aerofolio(aerofolio, nome_modelo="4412 grosseiro", n_pontos_contorno=100)
+    nome_malha = 'Malha/4412 grosseiro.msh'
+    exemplo()
+    solucao = SolucaoEscoamento(aerofolio, nome_malha, n_pontos_contorno=1000, gerar_malha=False, caso="viscoso")
+    # solucao.ordena_contorno()
+    # print(solucao.calcula_forcas())
     print("?")
