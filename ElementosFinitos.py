@@ -1,126 +1,24 @@
-import warnings
+# from mpi4py import MPI
+# from dolfinx import log as dlog
 
-from mpi4py import MPI
-from dolfinx import log as dlog
-dlog.set_log_level(dlog.LogLevel(0))
-from dolfinx import mesh as dmesh
-import dolfinx.io as dio
-from dolfinx import fem as dfem
-from dolfinx.fem import petsc as dpetsc
-dppetsc=dpetsc.PETSc #estamos usando o pestsc do dolfin, em vez do petsc4py (isso eh um problema?)
-##TODO consertar petsc
-from dolfinx import nls as dnls
-import dolfinx
-import numpy as np
-import os
-from petsc4py.PETSc import ScalarType
-import ufl  # Unified Form Language. Linguagem para definicao de problemas de elementos finitos e forma fraca
-import gmsh
+import Malha
+
+# dlog.set_log_level(dlog.LogLevel(0))
+# from dolfinx import mesh as dmesh
+# import dolfinx.io as dio
+# from dolfinx import fem as dfem
+# from dolfinx.fem import petsc as dpetsc
+# dppetsc=dpetsc.PETSc #estamos usando o pestsc do dolfin, em vez do petsc4py (isso eh um problema?)
+# ##TODO consertar petsc
+# import ufl  # Unified Form Language. Linguagem para definicao de problemas de elementos finitos e forma fraca
 from Definicoes import *
-
-geo = gmsh.model.geo  # definindo um alias para o modulo de geometria do gmsh
-import dolfinx.io.gmshio
-
 # MPI.COMM_WORLD permite a paralelizacao de uma mesma malha entre processadores diferentes
-n_pontos_contorno_padrao=1000
 
-
-def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao) :
-    '''Gera uma malha no gmsh correspondendo a regiao em torno do aerofolio'''
-    ##TODO implementar
-    contornos = {"entrada" : 1, "saida" : 2, "superior" : 3, "inferior" : 4, }
-    # n_pontos_contorno = 1000
-    tag_fis = {}  # tags dos grupos fisicos
-    af_tamanho = 1 / n_pontos_contorno
-    tamanho = 0.1
-    ##Inicializando o gmsh
-    gmsh.initialize()
-    gmsh.model.add(nome_modelo)  # adiciona um modelo
-    gmsh.model.set_current(nome_modelo)  # define o modelo atual
-    geo.addPoint(-2, -1, 0, tamanho, tag=1)  # ponto inferior esquerdo
-    geo.addPoint(-2, 1, 0, tamanho, tag=2)  # ponto superior esquerdo
-    geo.addPoint(3, -1, 0, tamanho, tag=3)  # ponto inferior direito
-    geo.addPoint(3, 1, 0, tamanho, tag=4)  # ponto superior direito
-    geo.add_line(1, 2, tag=contornos["entrada"])
-    geo.add_line(3, 4, tag=contornos["saida"])
-    geo.add_line(1, 3, tag=contornos["inferior"])
-    geo.add_line(2, 4, tag=contornos["superior"])
-
-    ###versao a vera com aerofolio
-    ponto_inicial = geo.add_point(aerofolio.x_med(0), aerofolio.y_med(0), 0, af_tamanho)
-    ponto_final = geo.add_point(aerofolio.x_med(1), aerofolio.y_med(1), 0, af_tamanho)
-    pontos_sup = [ponto_inicial, ]
-    pontos_inf = [ponto_inicial, ]
-    af_sup = []
-    af_inf = []
-    for i in range(1, n_pontos_contorno) :
-        ##TODO escrever usando x e y vertores numpy com precisao 64bit
-        ##eta eh igual ao x da linha base do aerofolio
-        eta = i / n_pontos_contorno
-        pontos_sup.append(geo.add_point(aerofolio.x_sup(eta), aerofolio.y_sup(eta), 0, af_tamanho))
-        pontos_inf.append(geo.add_point(aerofolio.x_inf(eta), aerofolio.y_inf(eta), 0, af_tamanho))
-    pontos_sup.append(ponto_final)
-    pontos_inf.append(ponto_final)
-    for i in range(n_pontos_contorno) :
-        af_sup.append(geo.add_line(pontos_sup[i], pontos_sup[i + 1]))
-        af_inf.append(geo.add_line(pontos_inf[i], pontos_inf[i + 1]))
-    af_inf_inverso = [-item for item in af_inf[: :-1]]
-    contornos["af_superior"] = af_sup
-    contornos["af_inferior"] = af_inf
-
-    ##DEBUG DEBUG DEBUG
-    # desenha_aerofolio(pontos_sup,pontos_inf)
-
-    ###Definindo as superficies para simulacao
-    geo.add_curve_loop(af_sup + af_inf_inverso, tag=2)  # superficie do aerofolio
-    geo.add_curve_loop([-1, 4, 2, -3], tag=1)  # superficie externa
-    geo.add_plane_surface([1, 2], tag=1)  # superficie do escoamento
-
-    ##Criando grupos fisicos correspondendo a cada elemento da simulacao
-    tag_fis["af"] = geo.add_physical_group(1, af_sup + af_inf)
-    tag_fis["entrada"] = geo.add_physical_group(1, [contornos["entrada"]])
-    tag_fis["saida"] = geo.add_physical_group(1, [contornos["saida"]])
-    tag_fis["superior"] = geo.add_physical_group(1, [contornos["superior"]])
-    tag_fis["inferior"] = geo.add_physical_group(1, [contornos["inferior"]])
-    tag_fis["escoamento"] = geo.add_physical_group(2, [1])
-
-    ###Sincronizar as modificacoes geometricas e gerar a malha
-    geo.synchronize()  # necessario!
-    gmsh.model.mesh.generate(2)  # gera a malha
-    nome_arquivo = os.path.join("Malha", f"{nome_modelo}.msh")
-    gmsh.write(nome_arquivo)  # salva o arquivo da malha
-    ##Encerrando o gmsh
-    gmsh.finalize()
-    return nome_arquivo
-
-
-def desenha_aerofolio(pontos_sup, pontos_inf) :
-    eixo = plt.axes()
-    geo.synchronize()
-    lista_x_sup = []
-    lista_y_sup = []
-    lista_x_inf = []
-    lista_y_inf = []
-    for ponto in pontos_sup :
-        x, y, z = gmsh.model.get_value(0, ponto, [])
-        lista_x_sup.append(x)
-        lista_y_sup.append(y)
-        # plt.scatter(x,y, color="blue")
-        # plt.text(x,y, ponto, color="blue")
-    for ponto in pontos_inf :
-        x, y, z = gmsh.model.get_value(0, ponto, [])
-        lista_x_inf.append(x)
-        lista_y_inf.append(y)
-        # plt.scatter(x,y, color="red")
-        # plt.text(x,y, ponto, color="red")
-    plt.plot(lista_x_sup, lista_y_sup, color="blue")
-    plt.plot(lista_x_inf, lista_y_inf, color="red")
-    eixo.set_xlim(-0.05, 1.05)
-    eixo.set_ylim(-0.55, 0.55)
-    plt.show(block=False)
+viscosidade=1 #viscosidade dinamica do fluido
 
 def exporta_valores(u, t, malha, path):
     '''Exporta os valores de u para um arquivo .csv'''
+    #TODO fazer
 
     return
 
@@ -131,16 +29,17 @@ def calculo_aerofolio(aerofolio) :
     '''
     ##TODO implementar
 
-    nome_arquivo = malha_aerofolio(aerofolio, aerofolio.nome)
+    nome_arquivo = Malha.malha_aerofolio(aerofolio, aerofolio.nome)
 
 
-class SolucaoEscoamento :
-    def __init__(self, aerofolio, nome_malha, viscosidade=1, n_pontos_contorno=n_pontos_contorno_padrao, gerar_malha=True, caso="inviscido") :
+
+class SolucaoEscoamento2 :
+    def __init__(self, aerofolio, nome_malha, viscosidade=1, n_pontos_contorno=Malha.n_pontos_contorno_padrao, gerar_malha=True, caso="inviscido") :
         self.aerofolio=aerofolio
         self.n_pontos_contorno=n_pontos_contorno
         self.viscosidade=viscosidade #viscosidade cinematica do fluido
         if gerar_malha :
-            nome_malha=malha_aerofolio(aerofolio, nome_malha, n_pontos_contorno)
+            nome_malha= Malha.malha_aerofolio(aerofolio, nome_malha, n_pontos_contorno)
 
         self.resolve_escoamento(aerofolio, nome_malha, caso=caso)
 
@@ -457,366 +356,28 @@ class SolucaoEscoamento :
         ##TODO tracar linha de corrente a partir da velocidade em cada ponto
         pass
 
-
-def solucao_escoamento(aerofolio, nome_malha, n_pontos_contorno=n_pontos_contorno_padrao) :
-    '''Resolve o escoamento em torno de um aerofolio a partir da malha gerada pelo gmsh.
-    Retorna a funcao potencial como um campo do dolfin
-    :param aerofolio: objeto da classe AerofolioFino
-    :param malha: nome do arquivo da malha gerada pelo gmsh
-    '''
-    warnings.warn("Funcao depreciada. Use a classe SolucaoEscoamento", DeprecationWarning)
-    y_1, y_2 = -1., 1.
-    x_1, x_2 = -2., 3.
-    U0 = aerofolio.U0
-    alfa = aerofolio.alfa
-    malha, cell_tags, facet_tags = dio.gmshio.read_from_msh(nome_malha, MPI.COMM_WORLD, rank=0, gdim=2)
-    V = dfem.FunctionSpace(malha, ("CG", 1))  ##CG eh a familia de polinomios interpoladores de Lagrange, 1 eh a ordem do polinomio
-    phi_0 = 0.
-    phi_entrada = lambda x : phi_0 + x[0] * 0  # define-se psi=0 em y=0
-    phi_saida = lambda x : phi_0 + U0 * (x_2 - x_1) + x[0] * 0
-    phi_lateral = lambda x : phi_0 + U0 * x[0] - x_1
-    u_in = dfem.Function(V)
-    u_out = dfem.Function(V)
-    u_lateral = dfem.Function(V)
-    u_in.interpolate(phi_entrada)
-    u_out.interpolate(phi_saida)
-    u_lateral.interpolate(phi_lateral)
-    tdim = malha.topology.dim  # dimensao do espaco (no caso, 2D)
-    fdim = tdim - 1  # dimensao do contorno (no caso, 1D)
-    boundary_facets = dmesh.exterior_facet_indices(malha.topology)  # indices dos segmentos dos contornos
-    boundary_dofs = dfem.locate_dofs_topological(V, fdim, boundary_facets)  # indices dos graus de liberdade dos segmentos dos contornos
-    contorno_entrada = dfem.locate_dofs_geometrical(V, lambda x : np.isclose(x[0], x_1))
-    contorno_saida = dfem.locate_dofs_geometrical(V, lambda x : np.isclose(x[0], x_2))
-    contorno_superior = dfem.locate_dofs_geometrical(V, lambda x : np.isclose(x[1], y_2))
-    contorno_inferior = dfem.locate_dofs_geometrical(V, lambda x : np.isclose(x[1], y_1))
-    contornos_externos = np.concatenate([contorno_superior, contorno_inferior, contorno_entrada, contorno_saida])
-    contorno_aerofolio = np.setdiff1d(boundary_dofs, contornos_externos)
+class FEA(object):
+    '''Classe para resolucao do escoamento usando o metodo de elementos finitos de Galerkin manualmente'''
+    def __init__(self, nome_malha, tag_fis, aerofolio, velocidade=None):
+        '''
+        :param nome_malha: Nome do arquivo .msh produzido pelo gmsh. Deve ser uma malha de ordem 2
+        :param tag_fis: dicionario contendo a tag de cada grupo fisico da malha
+        :param aerofolio: AerofolioFino dado como entrada na simulacao
+        :param velocidade: velocidade do escoamento, caso seja diferente daquela prevista pelo aerofolio
+        '''
+        if velocidade is None:
+            velocidade=aerofolio.U0
+        self.velocidade=velocidade
+        self.aerofolio=aerofolio
+        self.nos, self.x_nos, self.elementos, self.nos_cont, self.x_cont = Malha.ler_malha(nome_malha, tag_fis)
+        self.nos_o1, self.elementos_o1=Malha.reduz_ordem(self.elementos)
 
 
-    bc_entrada = dfem.dirichletbc(u_in, contorno_entrada)  # aplica a condicao de contorno de Dirichlet com valor u_in
-    bc_saida = dfem.dirichletbc(u_out, contorno_saida)  # aplica a condicao de contorno de Dirichlet com valor u_out
-    bc_superior = dfem.dirichletbc(u_lateral, contorno_superior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
-    bc_inferior = dfem.dirichletbc(u_lateral, contorno_inferior)  # aplica a condicao de contorno de Dirichlet com valor u_lateral
-
-    phi = ufl.TrialFunction(V)
-    v = ufl.TestFunction(V)
-    a = ufl.dot(ufl.grad(phi), ufl.grad(v)) * ufl.dx  # define a forma bilinear a(u,v) = \int_\Omega \del psi * \del v dx
-    coord = ufl.SpatialCoordinate(malha)
-    L = (coord[0] - coord[
-        0]) * v * ufl.ds  # a forma linear nesse caso desaparece, pois as condicoes de contorno nas paredes, entrada e saida sao Dirichlet, e no aerofolio e von Neumann
-    problema = dpetsc.LinearProblem(a, L, bcs=[bc_entrada, bc_saida, bc_superior,
-                                                   bc_inferior], petsc_options={"ksp_type" : "preonly", "pc_type" : "lu"})  # fatoracao LU para solucao da matriz
-    phi_h = problema.solve()  # resolve o sistema e retorna a funcao-solucao
-
-    # ##Interpretando os dados
-    # vetor = phi_h.vector.array
-    # x = malha.geometry.x[:, 0]
-    # y = malha.geometry.x[:, 1]
-    # plt.figure()
-    # plt.scatter(x, y, c=vetor)
-
-    vals=np.empty(shape=len(malha.geometry.x), dtype=np.float64)
-    eval=phi_h.eval(x=np.array([[x_1,y_1,0.],[x_2,y_2,0.]]), cells=[0,1])
-    print(eval)
-    outra_malha=dmesh.create_rectangle(MPI.COMM_WORLD, [[x_1, y_1], [x_2, y_2]], [10,10], dmesh.CellType.quadrilateral)
-    Sol=dfem.FunctionSpace(outra_malha, ("CG", 1))
-    phi_h2=dfem.Function(Sol)
-    phi_h2.interpolate(phi_h)
-    print(phi_h2.vector.array)
-    return phi_h
 
 
-def exemplo() :
-    import gmsh
-    import os
-    import numpy as np
-    import matplotlib.pyplot as plt
-    import tqdm.autonotebook
 
-    from mpi4py import MPI
-    from petsc4py import PETSc
 
-    from dolfinx.cpp.mesh import to_type, cell_entity_type
-    from dolfinx.fem import (Constant, Function, FunctionSpace,
-                             assemble_scalar, dirichletbc, form, locate_dofs_topological, set_bc)
-    from dolfinx.fem.petsc import (apply_lifting, assemble_matrix, assemble_vector,
-                                   create_vector, create_matrix, set_bc)
-    from dolfinx.graph import adjacencylist
-    from dolfinx.geometry import bb_tree, compute_collisions_points, compute_colliding_cells
-    # from dolfinx.io import (VTXWriter, distribute_entity_data, gmshio)
-    from dolfinx.io import distribute_entity_data, gmshio
-    from dolfinx.mesh import create_mesh, meshtags_from_entities
 
-    from ufl import (FacetNormal, FiniteElement, Identity, Measure, TestFunction, TrialFunction, VectorElement,
-                     as_vector, div, dot, ds, dx, inner, lhs, grad, nabla_grad, rhs, sym)
-
-    gmsh.initialize()
-
-    L = 2.2
-    H = 0.41
-    c_x = c_y = 0.2
-    r = 0.05
-    gdim = 2
-    mesh_comm = MPI.COMM_WORLD
-    model_rank = 0
-    if mesh_comm.rank == model_rank:
-        rectangle = gmsh.model.occ.addRectangle(0, 0, 0, L, H, tag=1)
-        obstacle = gmsh.model.occ.addDisk(c_x, c_y, 0, r, r)
-    fluid_marker = 1
-    if mesh_comm.rank == model_rank:
-        volumes = gmsh.model.getEntities(dim=gdim)
-        assert (len(volumes) == 1)
-        gmsh.model.addPhysicalGroup(volumes[0][0], [volumes[0][1]], fluid_marker)
-        gmsh.model.setPhysicalName(volumes[0][0], fluid_marker, "Fluid")
-    inlet_marker, outlet_marker, wall_marker, obstacle_marker = 2, 3, 4, 5
-    inflow, outflow, walls, obstacle = [], [], [], []
-    if mesh_comm.rank == model_rank:
-        boundaries = gmsh.model.getBoundary(volumes, oriented=False)
-        for boundary in boundaries:
-            center_of_mass = gmsh.model.occ.getCenterOfMass(boundary[0], boundary[1])
-            if np.allclose(center_of_mass, [0, H / 2, 0]):
-                inflow.append(boundary[1])
-            elif np.allclose(center_of_mass, [L, H / 2, 0]):
-                outflow.append(boundary[1])
-            elif np.allclose(center_of_mass, [L / 2, H, 0]) or np.allclose(center_of_mass, [L / 2, 0, 0]):
-                walls.append(boundary[1])
-            else:
-                obstacle.append(boundary[1])
-        gmsh.model.addPhysicalGroup(1, walls, wall_marker)
-        gmsh.model.setPhysicalName(1, wall_marker, "Walls")
-        gmsh.model.addPhysicalGroup(1, inflow, inlet_marker)
-        gmsh.model.setPhysicalName(1, inlet_marker, "Inlet")
-        gmsh.model.addPhysicalGroup(1, outflow, outlet_marker)
-        gmsh.model.setPhysicalName(1, outlet_marker, "Outlet")
-        gmsh.model.addPhysicalGroup(1, obstacle, obstacle_marker)
-        gmsh.model.setPhysicalName(1, obstacle_marker, "Obstacle")
-    # Create distance field from obstacle.
-    # Add threshold of mesh sizes based on the distance field
-    # LcMax -                  /--------
-    #                      /
-    # LcMin -o---------/
-    #        |         |       |
-    #       Point    DistMin DistMax
-    res_min = r / 3
-    if mesh_comm.rank == model_rank:
-        distance_field = gmsh.model.mesh.field.add("Distance")
-        gmsh.model.mesh.field.setNumbers(distance_field, "EdgesList", obstacle)
-        threshold_field = gmsh.model.mesh.field.add("Threshold")
-        gmsh.model.mesh.field.setNumber(threshold_field, "IField", distance_field)
-        gmsh.model.mesh.field.setNumber(threshold_field, "LcMin", res_min)
-        gmsh.model.mesh.field.setNumber(threshold_field, "LcMax", 0.25 * H)
-        gmsh.model.mesh.field.setNumber(threshold_field, "DistMin", r)
-        gmsh.model.mesh.field.setNumber(threshold_field, "DistMax", 2 * H)
-        min_field = gmsh.model.mesh.field.add("Min")
-        gmsh.model.mesh.field.setNumbers(min_field, "FieldsList", [threshold_field])
-        gmsh.model.mesh.field.setAsBackgroundMesh(min_field)
-    if mesh_comm.rank == model_rank:
-        gmsh.option.setNumber("Mesh.Algorithm", 8)
-        gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 2)
-        gmsh.option.setNumber("Mesh.RecombineAll", 1)
-        gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 1)
-        gmsh.model.mesh.generate(gdim)
-        gmsh.model.mesh.setOrder(2)
-        gmsh.model.mesh.optimize("Netgen")
-    mesh, _, ft = gmshio.model_to_mesh(gmsh.model, mesh_comm, model_rank, gdim=gdim)
-    ft.name = "Facet markers"
-    t = 0
-    T = 8  # Final time
-    dt = 1 / 1600  # Time step size
-    num_steps = int(T / dt)
-    k = Constant(mesh, PETSc.ScalarType(dt))
-    mu = Constant(mesh, PETSc.ScalarType(0.001))  # Dynamic viscosity
-    rho = Constant(mesh, PETSc.ScalarType(1))  # Density
-    v_cg2 = VectorElement("Lagrange", mesh.ufl_cell(), 2)
-    s_cg1 = FiniteElement("Lagrange", mesh.ufl_cell(), 1)
-    V = FunctionSpace(mesh, v_cg2)
-    Q = FunctionSpace(mesh, s_cg1)
-
-    fdim = mesh.topology.dim - 1
-
-    # Define boundary conditions
-
-    class InletVelocity():
-        def __init__(self, t):
-            self.t = t
-
-        def __call__(self, x):
-            values = np.zeros((gdim, x.shape[1]), dtype=PETSc.ScalarType)
-            values[0] = 4 * 1.5 * np.sin(self.t * np.pi / 8) * x[1] * (0.41 - x[1]) / (0.41 ** 2)
-            return values
-
-    # Inlet
-    u_inlet = Function(V)
-    inlet_velocity = InletVelocity(t)
-    u_inlet.interpolate(inlet_velocity)
-    bcu_inflow = dirichletbc(u_inlet, locate_dofs_topological(V, fdim, ft.find(inlet_marker)))
-    # Walls
-    u_nonslip = np.array((0,) * mesh.geometry.dim, dtype=PETSc.ScalarType)
-    bcu_walls = dirichletbc(u_nonslip, locate_dofs_topological(V, fdim, ft.find(wall_marker)), V)
-    # Obstacle
-    bcu_obstacle = dirichletbc(u_nonslip, locate_dofs_topological(V, fdim, ft.find(obstacle_marker)), V)
-    bcu = [bcu_inflow, bcu_obstacle, bcu_walls]
-    # Outlet
-    bcp_outlet = dirichletbc(PETSc.ScalarType(0), locate_dofs_topological(Q, fdim, ft.find(outlet_marker)), Q)
-    bcp = [bcp_outlet]
-    u = TrialFunction(V)
-    v = TestFunction(V)
-    u_ = Function(V)
-    u_.name = "u"
-    u_s = Function(V)
-    u_n = Function(V)
-    u_n1 = Function(V)
-    p = TrialFunction(Q)
-    q = TestFunction(Q)
-    p_ = Function(Q)
-    p_.name = "p"
-    phi = Function(Q)
-    f = Constant(mesh, PETSc.ScalarType((0, 0)))
-    F1 = rho / k * dot(u - u_n, v) * dx
-    F1 += inner(dot(1.5 * u_n - 0.5 * u_n1, 0.5 * nabla_grad(u + u_n)), v) * dx
-    F1 += 0.5 * mu * inner(grad(u + u_n), grad(v)) * dx - dot(p_, div(v)) * dx
-    F1 += dot(f, v) * dx
-    a1 = form(lhs(F1))
-    L1 = form(rhs(F1))
-    A1 = create_matrix(a1)
-    b1 = create_vector(L1)
-    a2 = form(dot(grad(p), grad(q)) * dx)
-    L2 = form(-rho / k * dot(div(u_s), q) * dx)
-    A2 = assemble_matrix(a2, bcs=bcp)
-    A2.assemble()
-    b2 = create_vector(L2)
-    a3 = form(rho * dot(u, v) * dx)
-    L3 = form(rho * dot(u_s, v) * dx - k * dot(nabla_grad(phi), v) * dx)
-    A3 = assemble_matrix(a3)
-    A3.assemble()
-    b3 = create_vector(L3)
-    # Solver for step 1
-    solver1 = PETSc.KSP().create(mesh.comm)
-    solver1.setOperators(A1)
-    solver1.setType(PETSc.KSP.Type.BCGS)
-    pc1 = solver1.getPC()
-    pc1.setType(PETSc.PC.Type.JACOBI)
-
-    # Solver for step 2
-    solver2 = PETSc.KSP().create(mesh.comm)
-    solver2.setOperators(A2)
-    solver2.setType(PETSc.KSP.Type.MINRES)
-    pc2 = solver2.getPC()
-    pc2.setType(PETSc.PC.Type.HYPRE)
-    pc2.setHYPREType("boomeramg")
-
-    # Solver for step 3
-    solver3 = PETSc.KSP().create(mesh.comm)
-    solver3.setOperators(A3)
-    solver3.setType(PETSc.KSP.Type.CG)
-    pc3 = solver3.getPC()
-    pc3.setType(PETSc.PC.Type.SOR)
-    n = -FacetNormal(mesh)  # Normal pointing out of obstacle
-    dObs = Measure("ds", domain=mesh, subdomain_data=ft, subdomain_id=obstacle_marker)
-    u_t = inner(as_vector((n[1], -n[0])), u_)
-    drag = form(2 / 0.1 * (mu / rho * inner(grad(u_t), n) * n[1] - p_ * n[0]) * dObs)
-    lift = form(-2 / 0.1 * (mu / rho * inner(grad(u_t), n) * n[0] + p_ * n[1]) * dObs)
-    if mesh.comm.rank == 0:
-        C_D = np.zeros(num_steps, dtype=PETSc.ScalarType)
-        C_L = np.zeros(num_steps, dtype=PETSc.ScalarType)
-        t_u = np.zeros(num_steps, dtype=np.float64)
-        t_p = np.zeros(num_steps, dtype=np.float64)
-    tree = bb_tree(mesh, mesh.geometry.dim)
-    points = np.array([[0.15, 0.2, 0], [0.25, 0.2, 0]])
-    cell_candidates = compute_collisions_points(tree, points)
-    colliding_cells = compute_colliding_cells(mesh, cell_candidates, points)
-    front_cells = colliding_cells.links(0)
-    back_cells = colliding_cells.links(1)
-    if mesh.comm.rank == 0:
-        p_diff = np.zeros(num_steps, dtype=PETSc.ScalarType)
-    from pathlib import Path
-    folder = Path("results")
-    folder.mkdir(exist_ok=True, parents=True)
-    # vtx_u = VTXWriter(mesh.comm, "dfg2D-3-u.bp", [u_], engine="BP4")
-    # vtx_p = VTXWriter(mesh.comm, "dfg2D-3-p.bp", [p_], engine="BP4")
-    # vtx_u.write(t)
-    # vtx_p.write(t)
-    progress = tqdm.autonotebook.tqdm(desc="Solving PDE", total=num_steps)
-    for i in range(num_steps):
-        progress.update(1)
-        # Update current time step
-        t += dt
-        # Update inlet velocity
-        inlet_velocity.t = t
-        u_inlet.interpolate(inlet_velocity)
-
-        # Step 1: Tentative velocity step
-        A1.zeroEntries()
-        assemble_matrix(A1, a1, bcs=bcu)
-        A1.assemble()
-        with b1.localForm() as loc:
-            loc.set(0)
-        assemble_vector(b1, L1)
-        apply_lifting(b1, [a1], [bcu])
-        b1.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-        set_bc(b1, bcu)
-        solver1.solve(b1, u_s.vector)
-        u_s.x.scatter_forward()
-
-        # Step 2: Pressure corrrection step
-        with b2.localForm() as loc:
-            loc.set(0)
-        assemble_vector(b2, L2)
-        apply_lifting(b2, [a2], [bcp])
-        b2.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-        set_bc(b2, bcp)
-        solver2.solve(b2, phi.vector)
-        phi.x.scatter_forward()
-
-        p_.vector.axpy(1, phi.vector)
-        p_.x.scatter_forward()
-
-        # Step 3: Velocity correction step
-        with b3.localForm() as loc:
-            loc.set(0)
-        assemble_vector(b3, L3)
-        b3.ghostUpdate(addv=PETSc.InsertMode.ADD_VALUES, mode=PETSc.ScatterMode.REVERSE)
-        solver3.solve(b3, u_.vector)
-        u_.x.scatter_forward()
-
-        # Write solutions to file
-        # vtx_u.write(t)
-        # vtx_p.write(t)
-
-        # Update variable with solution form this time step
-        with u_.vector.localForm() as loc_, u_n.vector.localForm() as loc_n, u_n1.vector.localForm() as loc_n1:
-            loc_n.copy(loc_n1)
-            loc_.copy(loc_n)
-
-        # Compute physical quantities
-        # For this to work in paralell, we gather contributions from all processors
-        # to processor zero and sum the contributions.
-        drag_coeff = mesh.comm.gather(assemble_scalar(drag), root=0)
-        lift_coeff = mesh.comm.gather(assemble_scalar(lift), root=0)
-        p_front = None
-        if len(front_cells) > 0:
-            p_front = p_.eval(points[0], front_cells[:1])
-        p_front = mesh.comm.gather(p_front, root=0)
-        p_back = None
-        if len(back_cells) > 0:
-            p_back = p_.eval(points[1], back_cells[:1])
-        p_back = mesh.comm.gather(p_back, root=0)
-        if mesh.comm.rank == 0:
-            t_u[i] = t
-            t_p[i] = t - dt / 2
-            C_D[i] = sum(drag_coeff)
-            C_L[i] = sum(lift_coeff)
-            # Choose first pressure that is found from the different processors
-            for pressure in p_front:
-                if pressure is not None:
-                    p_diff[i] = pressure[0]
-                    break
-            for pressure in p_back:
-                if pressure is not None:
-                    p_diff[i] -= pressure[0]
-                    break
-    # vtx_u.close()
-    # vtx_p.close()
 
 
 if __name__ == "__main__" :
@@ -825,8 +386,7 @@ if __name__ == "__main__" :
     aerofolio = AerofolioFino.AerofolioFinoNACA4([0.04, 0.4, 0.12], 0, 1)
     # nome_malha=malha_aerofolio(aerofolio, nome_modelo="4412 grosseiro", n_pontos_contorno=100)
     nome_malha = 'Malha/4412 grosseiro.msh'
-    exemplo()
-    solucao = SolucaoEscoamento(aerofolio, nome_malha, n_pontos_contorno=1000, gerar_malha=False, caso="viscoso")
+    solucao = SolucaoEscoamento2(aerofolio, nome_malha, n_pontos_contorno=1000, gerar_malha=False, caso="viscoso")
     # solucao.ordena_contorno()
     # print(solucao.calcula_forcas())
     print("?")

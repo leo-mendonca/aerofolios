@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib
+import gmsh
 import warnings
 
 plt.rcParams["figure.dpi"]=300
