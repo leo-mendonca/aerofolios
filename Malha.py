@@ -1,9 +1,42 @@
 import os
-from Definicoes import  gmsh, np, plt
-
+from Definicoes import gmsh, np, plt
 
 geo = gmsh.model.geo  # definindo um alias para o modulo de geometria do gmsh
-n_pontos_contorno_padrao=1000
+n_pontos_contorno_padrao = 1000
+
+
+def malha_quadrada(nome_modelo, tamanho, ordem=2) :
+    '''Gera uma malha quadrada no gmsh'''
+    contornos = {"esquerda" : 1, "direita" : 2, "superior" : 3, "inferior" : 4}
+    tag_fis = {}
+    ##Inicializando o gmsh
+    gmsh.initialize()
+    gmsh.model.add(nome_modelo)  # adiciona um modelo
+    gmsh.model.set_current(nome_modelo)  # define o modelo atual
+    geo.addPoint(0, 0, 0, tamanho, tag=1)  # ponto inferior esquerdo
+    geo.addPoint(0, 1, 0, tamanho, tag=2)  # ponto superior esquerdo
+    geo.addPoint(1, 0, 0, tamanho, tag=3)  # ponto inferior direito
+    geo.addPoint(1, 1, 0, tamanho, tag=4)  # ponto superior direito
+    geo.addLine(2, 1, tag=contornos["esquerda"])  # linha esquerda
+    geo.addLine(4, 2, tag=contornos["superior"])  # linha superior
+    geo.addLine(3, 4, tag=contornos["direita"])  # linha direita
+    geo.addLine(1, 3, tag=contornos["inferior"])  # linha inferior
+    geo.add_curve_loop([contornos["direita"], contornos["superior"], contornos["esquerda"], contornos["inferior"]], tag=1)  # superficie externa
+    geo.add_plane_surface([1], tag=1)  # superficie do escoamento
+    tag_fis["esquerda"] = geo.add_physical_group(1, [contornos["esquerda"]])
+    tag_fis["direita"] = geo.add_physical_group(1, [contornos["direita"]])
+    tag_fis["superior"] = geo.add_physical_group(1, [contornos["superior"]])
+    tag_fis["inferior"] = geo.add_physical_group(1, [contornos["inferior"]])
+    tag_fis["escoamento"] = geo.add_physical_group(2, [1])
+    ###Sincronizar as modificacoes geometricas e gerar a malha
+    geo.synchronize()  # necessario!
+    gmsh.option.set_number("Mesh.ElementOrder", ordem)  # Define a ordem dos elementos
+    gmsh.model.mesh.generate(2)  # gera a malha
+    nome_arquivo = os.path.join("Malha", f"{nome_modelo}.msh")
+    gmsh.write(nome_arquivo)  # salva o arquivo da malha
+    ##Encerrando o gmsh
+    gmsh.finalize()
+    return nome_arquivo, tag_fis
 
 
 def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao, ordem=2) :
@@ -12,7 +45,7 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     # n_pontos_contorno = 1000
     tag_fis = {}  # tags dos grupos fisicos
     af_tamanho = 1 / n_pontos_contorno
-    tamanho = 0.1
+    tamanho = 10 * af_tamanho
     ##Inicializando o gmsh
     gmsh.initialize()
     gmsh.model.add(nome_modelo)  # adiciona um modelo
@@ -47,9 +80,6 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     contornos["af_superior"] = af_sup
     contornos["af_inferior"] = af_inf
 
-    ##DEBUG DEBUG DEBUG
-    # desenha_aerofolio(pontos_sup,pontos_inf)
-
     ###Definindo as superficies para simulacao
     geo.add_curve_loop(af_sup + af_inf_inverso, tag=2)  # superficie do aerofolio
     geo.add_curve_loop([-1, 4, 2, -3], tag=1)  # superficie externa
@@ -61,7 +91,7 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     tag_fis["saida"] = geo.add_physical_group(1, [contornos["saida"]])
     tag_fis["superior"] = geo.add_physical_group(1, [contornos["superior"]])
     tag_fis["inferior"] = geo.add_physical_group(1, [contornos["inferior"]])
-    tag_fis["escoamento"] = geo.add_physical_group(2, [1])
+    tag_fis["escoamento"] = geo.add_physical_group(2, [1])  # grupo fisico 2d correspondendo a todo o escoamento
 
     ###Sincronizar as modificacoes geometricas e gerar a malha
     geo.synchronize()  # necessario!
@@ -72,6 +102,7 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     ##Encerrando o gmsh
     gmsh.finalize()
     return nome_arquivo, tag_fis
+
 
 def ler_malha(nome_malha, tag_fis) :
     '''
@@ -90,28 +121,29 @@ def ler_malha(nome_malha, tag_fis) :
 
     gmsh.initialize()
     gmsh.open(nome_malha)
-    nos, x_nos=gmsh.model.mesh.get_nodes_for_physical_group(2,tag_fis["escoamento"]) #nos sao os indices de cada no. Na pratica, eh igual a sequencia de 1 ate n
-    nos-=1 #ajustando os indices para comecar em 0
-    x_nos=x_nos.reshape((len(nos),3)) #o vetor de coordenadas eh dado de forma sequencial, por isso eh necessario o reshape para deixa-lo n×3
-    [i_elem], [nos_elem] = gmsh.model.mesh.get_elements(2)[1:] #indice e indice dos nos de cada elemento triangular
-    nos_elem-=1 #ajustando os indices para comecar em 0
-    nos_por_elem=len(nos_elem)//len(i_elem) #numero de nos por elemento. 6 se forem elementos de ordem 2; 3 se forem de ordem 1
-    nos_elem=nos_elem.reshape((len(i_elem),nos_por_elem)) #o vetor de nos por elemento eh dado de forma sequencial, por isso o reshape
+    nos, x_nos = gmsh.model.mesh.get_nodes_for_physical_group(2, tag_fis["escoamento"])  # nos sao os indices de cada no. Na pratica, eh igual a sequencia de 1 ate n
+    nos -= 1  # ajustando os indices para comecar em 0
+    x_nos = x_nos.reshape((len(nos), 3))  # o vetor de coordenadas eh dado de forma sequencial, por isso eh necessario o reshape para deixa-lo n×3
+    [i_elem], [nos_elem] = gmsh.model.mesh.get_elements(2)[1 :]  # indice e indice dos nos de cada elemento triangular
+    nos_elem -= 1  # ajustando os indices para comecar em 0
+    nos_por_elem = len(nos_elem) // len(i_elem)  # numero de nos por elemento. 6 se forem elementos de ordem 2; 3 se forem de ordem 1
+    nos_elem = nos_elem.reshape((len(i_elem), nos_por_elem))  # o vetor de nos por elemento eh dado de forma sequencial, por isso o reshape
 
     # i_linha, [nos_linha] = gmsh.model.mesh.get_elements(1)[1:] #indice e indice dos nos de cada segmento de reta do contorno
-    nos_contorno={}
-    x_contorno={}
+    nos_contorno = {}
+    x_contorno = {}
     for chave in tag_fis.keys() :
         nos_contorno[chave], x_contorno[chave] = gmsh.model.mesh.get_nodes_for_physical_group(1, tag_fis[chave])
         nos_contorno[chave] -= 1
     # x_linha=x_nos[nos_linha]
     return nos, x_nos, nos_elem, nos_contorno, x_contorno
 
+
 def reduz_ordem(nos_elem) :
     '''Recebe uma malha de ordem 2 e retorna uma malha de ordem 1 com os mesmos elementos'''
-    assert nos_elem.shape[1]==6, "A malha deve ser de ordem 2" #uma malha de ordem 2 tem 6 nos por elemento triangular
-    nos_elem_ordem_1 =nos_elem[:,[0,1,2]] #pega colunas fixas do array de nos elementais
-    nos_ordem_1 = np.unique(nos_elem_ordem_1) #pega os nos que aparecem nos elementos
+    assert nos_elem.shape[1] == 6, "A malha deve ser de ordem 2"  # uma malha de ordem 2 tem 6 nos por elemento triangular
+    nos_elem_ordem_1 = nos_elem[:, [0, 1, 2]]  # pega colunas fixas do array de nos elementais
+    nos_ordem_1 = np.unique(nos_elem_ordem_1)  # pega os nos que aparecem nos elementos
     # x_nos_ordem_1 = x_nos[nos_ordem_1] #pega as coordenadas dos nos que aparecem nos elementos
 
     return nos_ordem_1, nos_elem_ordem_1
@@ -142,14 +174,16 @@ def desenha_aerofolio(pontos_sup, pontos_inf) :
     eixo.set_ylim(-0.55, 0.55)
     plt.show(block=False)
 
-if __name__=="__main__":
+
+if __name__ == "__main__" :
     import AerofolioFino
+
     aerofolio = AerofolioFino.AerofolioFinoNACA4([0.04, 0.4, 0.12], 0, 1)
-    nome_malha, tag_fis=malha_aerofolio(aerofolio, nome_modelo="4412 grosseiro", n_pontos_contorno=5, ordem=2)
+    nome_malha, tag_fis = malha_aerofolio(aerofolio, nome_modelo="4412 grosseiro", n_pontos_contorno=5, ordem=2)
     # gmsh.initialize()
     # gmsh.open(nome_malha)
-    nos, x_nos, nos_elem, nos_contorno, x_contorno=ler_malha(nome_malha, tag_fis)
-    nos1, nos_elem1=reduz_ordem(nos_elem)
+    nos, x_nos, nos_elem, nos_contorno, x_contorno = ler_malha(nome_malha, tag_fis)
+    nos1, nos_elem1 = reduz_ordem(nos_elem)
     plt.triplot(x_nos[:, 0], x_nos[:, 1], triangles=nos_elem1)
     plt.show(block=False)
     print(tag_fis)
