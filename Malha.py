@@ -132,10 +132,16 @@ def ler_malha(nome_malha, tag_fis) :
     # i_linha, [nos_linha] = gmsh.model.mesh.get_elements(1)[1:] #indice e indice dos nos de cada segmento de reta do contorno
     nos_contorno = {}
     x_contorno = {}
-    for chave in tag_fis.keys() :
+    chaves=list(tag_fis.keys())
+    for chave in chaves :
         nos_contorno[chave], x_contorno[chave] = gmsh.model.mesh.get_nodes_for_physical_group(1, tag_fis[chave])
         nos_contorno[chave] -= 1
-    # x_linha=x_nos[nos_linha]
+    ##Remover os nos duplicados em mais de um coinjunto de contorno
+    for i in range(len(chaves)):
+        for j in range(i+1, len(chaves)):
+            nos_contorno[chaves[i]]=np.setdiff1d(nos_contorno[chaves[i]], nos_contorno[chaves[j]])
+
+    gmsh.finalize()
     return nos, x_nos, nos_elem, nos_contorno, x_contorno
 
 
