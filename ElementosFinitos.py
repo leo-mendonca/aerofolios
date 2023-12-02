@@ -3,6 +3,7 @@
 import time
 import warnings
 import math
+import os
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -154,16 +155,20 @@ def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False
         plt.triplot(fea.x_nos[:, 0], fea.x_nos[:, 1], fea.elementos_o1, alpha=0.3)
         plt.scatter(x_nos.T[0], x_nos.T[1], c=p, alpha=0.5)
         plt.colorbar()
+        plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_p.png"), bbox_inches="tight")
         fig2, eixo2 = plt.subplots()
         erro_alto = np.abs(erro) > 1E-3
         plt.triplot(fea.x_nos[:, 0], fea.x_nos[:, 1], fea.elementos_o1, alpha=0.3)
-        plt.scatter(x_nos[erro_alto].T[0], x_nos[erro_alto].T[1], c=erro[erro_alto], alpha=0.5)
+        plt.scatter(x_nos.T[0], x_nos.T[1], c=erro, alpha=0.5)
         plt.colorbar()
+        plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_erro.png"), bbox_inches="tight")
         fig3, eixo3 = plt.subplots()
         erro_baixo = np.abs(erro) <= 1E-3
         eixo3.triplot(fea.x_nos[:, 0], fea.x_nos[:, 1], fea.elementos_o1, alpha=0.3)
-        eixo3.scatter(x_nos[erro_baixo].T[0], x_nos[erro_baixo].T[1], alpha=0.5)
+        # eixo3.scatter(x_nos[erro_baixo].T[0], x_nos[erro_baixo].T[1], alpha=0.5)
+        plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_malha.png"), bbox_inches="tight")
         plt.show(block=False)
+
 
 
 #
@@ -619,12 +624,18 @@ class FEA(object):
         if verbose: print("Sistema linear montado")
         return A, b
 
-    def procedimento_laplaciano(self, l, pos_i, pos_j, x, y, ordem):
-        '''Procedimento elementar para gerar cada entrada da matriz da forma variacional correspondente ao laplaciano'''
+    def procedimento_laplaciano(self, l, pos_i, pos_j, x, y, ordem_i, ordem_j):
+        '''Procedimento elementar para gerar cada entrada da matriz da forma variacional correspondente ao laplaciano
+        :param l: elemento em que estamos
+        :param pos_i: posicao do ponto i no elemento l
+        :param pos_j: posicao do ponto j no elemento l
+        :param ordem_i: ordem do no i (1 ou 2). Corresponde tipicamente a ordem da funcao TESTE
+        :param ordem_j: ordem do no j (1 ou 2). Corresponde tipicamente a ordem da funcao TENTATIVA
+        '''
         area = self.dets_lin[l] / 2
-        if ordem == 1:
+        if ordem_i == 1 and ordem_j==1:
             valor = -2 * area * (self.coefs_b_lin[l, pos_i] * self.coefs_b_lin[l, pos_j] + self.coefs_c_lin[l, pos_i] * self.coefs_c_lin[l, pos_j])
-        elif ordem == 2:
+        elif ordem_i == 2 and ordem_j==2:
             ai, bi, ci, di, ei, fi = self.coefs_o2[l, pos_i]
             axi, bxi, cxi, ayi, byi, cyi = coefs_aux_grad_o2(ai, bi, ci, di, ei, fi, x, y)
             aj, bj, cj, dj, ej, fj = self.coefs_o2[l, pos_j]
@@ -639,6 +650,7 @@ class FEA(object):
                             axi * bxj + axj * bxi + ayi * byj + ayj * byi])
             ##O fator que multiplica cada entrada de rho eh dado por J_kn = k!n!/(k+n+2)!, onde k e n sao as potencias de alfa e beta, respectivamente
             valor = -2 * area * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
+        else: raise NotImplementedError(f"Nao implementado calculo do laplaciano com teste ordem {ordem_i} e tentativa ordem {ordem_j}")
         return valor
 
     def procedimento_integracao_simples(self, l, pos_i, pos_j, x, y, ordem):
@@ -730,8 +742,6 @@ class FEA(object):
         Atua em todos os pontos nos quais nao ha condicao de dirichlet, mas nao realiza qualquer tipo de calculo no contorno
         Ex: montar matriz que corresponde a forma variacional da equacao de Laplace
         :param contornos_dirichlet: lista de tuplas contendo, cada uma: (vetor de nos com condicao de contorno de Dirichlet, funcao u=f(x) que define a condicao de contorno)
-        :param contornos_neumann: lista de tuplas contendo, cada uma: (vetor de nos com condicao de contorno de Neumann, constante u*n=k que define a condicao de contorno)
-        :param contornos_livres: lista de vetores contendo os nos sem condicao de contorno definida
         '''
         if ordem == 1:
             elementos = self.elementos_o1
@@ -769,6 +779,58 @@ class FEA(object):
         ##Geramos a matriz esparsa com base nos arrays de linhas, colunas e valores
         A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos), len(nos)), dtype=np.float64)
         # A = A.tobsr()
+        return A
+
+    def monta_matriz2(self, procedimento, contornos_dirichlet=[], ordem_teste=1, ordem_tentativa=1, ordem=None):
+        '''Monta a matriz A que, aplicada ao vetor de valores de u ou p, produz a integral de uma determinada grandeza (que depende do procedimento).
+        Atua em todos os pontos nos quais nao ha condicao de dirichlet, mas nao realiza qualquer tipo de calculo no contorno
+        Exige a definicao da ordem da funcao de interpolacao para a funcao teste (v ou q) e para a funcao tentativa (u ou p)
+        Se n_v eh o numero de nos da funcao teste, e n_u da funcao tentativa, a matriz A tera dimensao n_v x n_u, pois cada entrada da matriz corresponde a um par (v_i, u_j)'''
+        if not ordem is None: #Nesse caso, a ordem eh a mesma para teste e tentativa, e os parametros ordem_teste e ordem_tentativa sao ignorados
+            ordem_teste = ordem
+            ordem_tentativa = ordem
+        if ordem_teste == 1:
+            elementos_teste = self.elementos_o1
+            nos_teste = self.nos_o1
+        elif ordem_teste == 2:
+            elementos_teste = self.elementos
+            nos_teste = self.nos
+        else: raise ValueError(f"Elementos de ordem {ordem_teste} nao sao suportados")
+        if ordem_tentativa == 1:
+            elementos_tentativa = self.elementos_o1
+            nos_tentativa = self.nos_o1
+        elif ordem_tentativa == 2:
+            elementos_tentativa = self.elementos
+            nos_tentativa = self.nos
+        else: raise ValueError(f"Elementos de ordem {ordem_tentativa} nao sao suportados")
+        linhas, colunas, valores = [], [], []
+        ###Definindo os pontos com condicao de dirichlet, onde a funcao tentativa eh nula
+        pontos_dirichlet = np.concatenate([contornos_dirichlet[i][0] for i in range(len(contornos_dirichlet))])  # lista de todos os pontos com condicao de dirichlet
+        pontos_sem_dirichlet = np.setdiff1d(nos_teste, pontos_dirichlet)  # lista de nos da funcao teste sem condição de dirichlet
+        for i in pontos_sem_dirichlet:  # aqui, varremos todos os pontos nos da funcao TESTE
+            elementos_i = np.where(elementos_teste == i)[0]  # lista de elementos que contem o ponto i
+            for l in elementos_i:  # varremos cada elemento no qual N_i != 0
+                pos_i = np.nonzero(elementos_teste[l] == i)[0][0]  # posicao do ponto i no elemento l
+                if ordem_teste == 1 :
+                    ind_i = np.nonzero(nos_teste == i)[0][0]  # indice do ponto i no vetor de nos
+                elif ordem_teste == 2 :
+                    ind_i = i
+                for j in elementos_tentativa[l]:  # varremos os pontos da funcao TENTATIVA no elemento l
+                    x_abs, y_abs, z_abs = self.x_nos[elementos_tentativa[l]].T
+                    x, y = x_abs - x_abs[0], y_abs - y_abs[0]
+                    pos_j = np.nonzero(elementos_tentativa[l] == j)[0][0]  # posicao do ponto j no elemento l
+                    if ordem_tentativa == 1 :
+                        ind_j = np.nonzero(nos_tentativa == j)[0][0]
+                    elif ordem_tentativa == 2 :
+                        ind_j = j
+                    valor = procedimento(l, pos_i, pos_j, x, y, ordem_teste, ordem_tentativa)
+                    ##TODO reescrever os procedimentos para permitir ordens cruzadas
+                    linhas.append(ind_i)
+                    colunas.append(ind_j)
+                    valores.append(valor)
+
+
+        A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos_teste), len(nos_tentativa)), dtype=np.float64)
         return A
 
     def matriz_laplaciano_escalar(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1):
@@ -912,16 +974,29 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
+    def escoamento_IPCS_Stokes(self, T=10.,dt=0.1, contornos_dirichlet=[]):
+        '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
+        Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
+        :param T: tempo total do escoamento
+        :param dt: medida do passo de tempo a cada iteracao
+        '''
+        ##Inicializando os vetores de solucao
+        u=np.zeros(self.nos.shape, dtype=np.float64)
+        p=np.zeros(self.nos_o1.shape, dtype=np.float64) #a ordem dos elementos da pressao deve ser menor que da velocidade
+        u_ast=np.zeros(self.nos.shape, dtype=np.float64)
+        mat_lap_o1=self.matriz_laplaciano_escalar(contornos_dirichlet=contornos_dirichlet,ordem=1)
+        mat_lap_o2=self.matriz_laplaciano_escalar(contornos_dirichlet=contornos_dirichlet,ordem=2)
+        mat_integracao_o1=self.monta_matriz()
 
 if __name__ == "__main__":
     import AerofolioFino
 
     tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
-    # nome_malha, tag_fis= Malha.malha_quadrada("teste grosseiro", 0.2)
-    nome_malha = "Malha/teste.msh"
-    for ordem in (1,2,):
-        for n_teste in (1,2,3,4):
-            teste_laplace(nome_malha, tag_fis, ordem=ordem, n_teste=n_teste, plota=False, gauss=False)
+    nome_malha, tag_fis= Malha.malha_quadrada("teste", 0.05)
+    # nome_malha = "Malha/teste.msh"
+    for ordem in (2,):
+        for n_teste in (3,):
+            teste_laplace(nome_malha, tag_fis, ordem=ordem, n_teste=n_teste, plota=True, gauss=False)
     # teste_laplace(nome_malha, tag_fis, ordem=2, n_teste=2)
     # teste_laplace(nome_malha, tag_fis, ordem=1, n_teste=2)
     # teste_laplace(nome_malha, tag_fis, ordem=2, n_teste=1)

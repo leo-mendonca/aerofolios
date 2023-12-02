@@ -1,6 +1,7 @@
-import keras
+# import keras
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import keras
 import keras.activations as kact
 import keras.optimizers as kopt
 from Definicoes import *
@@ -98,9 +99,7 @@ if __name__=="__main__":
     plt.scatter(ymed[:,1],ypred[:,1], label="c_D")
     plt.scatter(ymed[:, 2], ypred[:, 2], label="c_M")
     plt.legend()
-
-    plt.savefig(os.path.join(path_saida, "Resultados.png"), dpi=300)
-
+    plt.savefig(os.path.join(path_saida,"Desempenho da rede - Aerofolio fino.png"), dpi=300)
 
     plt.show(block=False)
     plt.show(block=True)
