@@ -1,4 +1,5 @@
 import keras
+import matplotlib.pyplot as plt
 import tensorflow as tf
 import keras.activations as kact
 import keras.optimizers as kopt
@@ -80,21 +81,26 @@ if __name__=="__main__":
     modelo.fit(x,y,batch_size=256, epochs=15, validation_split=0.25, callbacks=[callback_taxa, callback_log], shuffle=True)
     avaliacao=modelo.evaluate(x,y)
     modelo.save(os.path.join(path_saida, "Modelo.keras"))
-    modelo2=keras.models.load_model(os.path.join(path_saida, "Modelo.keras"))
-    avaliacao2=modelo2.evaluate(x,y)
+    # modelo2=keras.models.load_model(os.path.join(path_saida, "Modelo.keras"))
+    # avaliacao2=modelo2.evaluate(x,y)
 
 
 
-    ymed = y[-256:]
-    ypred = modelo(x[-256:])
-    ypred2 = modelo2(x[-256:])
-    plt.scatter(ypred[:,0],ypred2[:,0], label="c_L")
-    plt.scatter(ypred[:,1],ypred2[:,1], label="c_D")
-    plt.scatter(ypred[:, 2], ypred2[:, 2], label="c_M")
+    ymed = y[-1024:]
+    ypred = modelo(x[-1024:])
+    # ypred2 = modelo2(x[-256:])
+    # plt.scatter(ypred[:,0],ypred2[:,0], label="c_L")
+    # plt.scatter(ypred[:,1],ypred2[:,1], label="c_D")
+    # plt.scatter(ypred[:, 2], ypred2[:, 2], label="c_M")
+    # ypred=modelo(x[-1024])
+    plt.figure(title="c_L")
     plt.scatter(ymed[:,0],ypred[:,0], label="c_L")
     plt.scatter(ymed[:,1],ypred[:,1], label="c_D")
     plt.scatter(ymed[:, 2], ypred[:, 2], label="c_M")
     plt.legend()
+
+    plt.savefig(os.path.join(path_saida, "Resultados.png"), dpi=300)
+
 
     plt.show(block=False)
     plt.show(block=True)
