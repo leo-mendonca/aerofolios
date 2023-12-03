@@ -718,6 +718,7 @@ class FEA(object):
                 cpi * (2 * dj * x[2] + fj * y[2]),
                 bpi * (2 * dj * x[2] + fj * y[2]) + cpi * (2 * dj * x[1] + fj * y[1]),
             ])
+            #Integracao de rho0+rho1*alfa+rho2*beta+rho3*alfa²+rho4*beta²+rho5*alfa*beta
             valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
         elif ordem_i == 2 and ordem_j == 1:
             api, bpi, cpi, dpi, epi, fpi = self.coefs_o2_alfa[pos_i]
@@ -1067,7 +1068,7 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None):
+    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
@@ -1083,9 +1084,9 @@ class FEA(object):
         ##Inicializando os vetores de solucao
         u_n = np.zeros((len(self.nos), 2), dtype=np.float64)
         p_n = np.zeros(self.nos_o1.shape, dtype=np.float64)  # a ordem dos elementos da pressao deve ser menor que da velocidade
-        u_ast = np.zeros(self.nos.shape, dtype=np.float64)
 
         ##Aplicando condicoes de dirichlet nos valores iniciais
+        ##TODO ele so esta aplicando as condicoes de dirichlet nos vertices, mas nao nos nos laterais. Por que?
         for (cont, funcao) in ux_dirichlet:
             for no in cont:
                 u_n[no, 0] = funcao(self.x_nos[no])
@@ -1108,13 +1109,15 @@ class FEA(object):
         mat_gradu_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
         mat_gradu_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
         ##u_ast
-        matriz_bloco1 = mat_integracao_o2 / dt + mat_lap_o2 / Re
+        matriz_bloco1 = mat_integracao_o2 / dt - mat_lap_o2 / Re
         A_dirich_ux, b_dirich_ux = self.monta_matriz_dirichlet(ux_dirichlet, ordem=2)
         A_dirich_uy, b_dirich_uy = self.monta_matriz_dirichlet(uy_dirichlet, ordem=2)
         A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
         ##p_ast
         A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
         b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
+        vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
+
         A_p = mat_lap_o1 + A_dirich_p
         ##u
         A_ux = mat_integracao_o2 / dt + A_dirich_ux
@@ -1131,42 +1134,60 @@ class FEA(object):
             t1=time.process_time()
             ##Calculando u*
             # A matriz de solucao tem formato (2px2p), pois diz respeito apenas a velocidade
-            vetor_un = np.concatenate(((mat_integracao_o2 / dt) @ u_n[:, 0], (mat_integracao_o2 / dt) @ u_n[:, 1]))
+            vetor_un = np.concatenate(((mat_integracao_o2) @ u_n[:, 0], (mat_integracao_o2) @ u_n[:, 1]))
             vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
-            vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
-            u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un + vetor_gradp + vetor_dirich_u)
-            u_ast = u_ast.reshape((len(self.nos), 2))
-            ##Calculando p*
+            u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un/dt - vetor_gradp + vetor_dirich_u)
+            u_ast = u_ast.reshape(( 2, len(self.nos))).T
 
+            ##Calculando p*
             div_u_ast = mat_gradu_x @ u_ast[:, 0] + mat_gradu_y @ u_ast[:, 1]
-            p_ast = ssp.linalg.spsolve(A_p, div_u_ast + b_dirich_p)
+            b_p=div_u_ast/dt + b_dirich_p
+            p_ast = ssp.linalg.spsolve(A_p, b_p)
+
             ##Calculando p_n+1
             p = p_n + p_ast
-            ##Calculando u_n+1
 
+            ##Calculando u_n+1
             vetor_u_ast = np.concatenate((mat_integracao_o2 @ u_ast[:, 0], mat_integracao_o2 @ u_ast[:, 1]))
             vetor_gradp = np.concatenate((mat_gradp_x @ p_ast, mat_gradp_y @ p_ast))
-            b_u = vetor_u_ast / dt - vetor_gradp
+            b_u = vetor_u_ast / dt - vetor_gradp + vetor_dirich_u
             u = ssp.linalg.spsolve(A_u, b_u)
-            u=u.reshape((len(self.nos), 2))
+            u=u.reshape((2, len(self.nos))).T
             t2=time.process_time()
             print(f"Tempo de resolucao: {t2-t1:.2f} s")
-            ##TODO fazer uma comparacao com solucao analitica
+            if not solucao_analitica is None:
+                if not regiao_analitica is None:
+                    pontos_an=self.nos[regiao_analitica(self.x_nos)] #separa apenas os nos selecionados para avaliar a solucao analitica
+                else:
+                    pontos_an=self.nos
+                u_an=solucao_analitica(Problema.x_nos[pontos_an])
+                erro=u[pontos_an]-u_an
+                print(f"Erro maximo: {np.max(np.abs(erro), axis=0)}")
+                print(f"Erro RMS: {np.sqrt(np.average(erro**2, axis=0))}")
+                print(f"Erro medio: {np.average(erro, axis=0)}")
+
+
             if np.isclose(t%1,0):
                 resultados[t]={"u":u, "u*":u_ast, "p":p, "p*":p_ast}
             u_n=u.copy()
             p_n=p.copy()
-
-
         return resultados
+
+    def localiza_elemento(self,x):
+        '''Dada um ponto, localiza em que elemento da malha ele se encontra'''
+        alfa=1/self.dets_lin
+        ##TODO implementar
+
+
 
 
 if __name__ == "__main__":
+    import pickle
     import AerofolioFino
 
     tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
     nome_malha = "Malha/teste 5-1.msh"
-    # nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", 0.1, (5,1))
+    nome_malha, tag_fis = Malha.malha_retangular("teste 10-1", 0.05, (10,1))
 
     Problema = FEA(nome_malha, tag_fis)
     zero_u = np.zeros(shape=len(Problema.nos), dtype=np.float64)
@@ -1180,21 +1201,48 @@ if __name__ == "__main__":
         (Problema.nos_cont["superior"], lambda x: 0.),
         (Problema.nos_cont["inferior"], lambda x: 0.),
     ]
-    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.)]
-    resultados=Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1)
-    ux=resultados[10]["u"][:,0]
-    plt.figure()
-    plt.suptitle("Velocidade horizontal - ux")
-    plt.scatter(Problema.x_nos[:,0], Problema.x_nos[:,1], c=ux)
-    plt.colorbar()
-    plt.figure()
-    plt.suptitle("Velocidade vertical - uy")
-    plt.scatter(Problema.x_nos[:,0], Problema.x_nos[:,1], c=resultados[0]["u"][:,1])
-    plt.colorbar()
-    plt.figure()
-    plt.suptitle("Pressao")
-    plt.scatter(Problema.x_nos_o1[:,0], Problema.x_nos_o1[:,1], c=resultados[10]["p"])
-    plt.colorbar()
+    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.),
+                   # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
+                   ]
+    regiao_analitica=lambda x: x[:,0]>9
+    solucao_analitica= lambda x: np.vstack([6*x[:,1]*(1-x[:,1]), np.zeros(len(x))]).T
+    executa=True
+    if executa:
+        resultados=Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.05, Re=1, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica)
+        with open(os.path.join("Picles","resultados.pkl"), "wb") as f:
+            pickle.dump((Problema, resultados), f)
+    else:
+        with open(os.path.join("Picles","resultados.pkl"), "rb") as f:
+            Problema, resultados=pickle.load(f)
+
+    def plotar_momento(Problema, resultados, t):
+        plt.figure()
+        plt.suptitle(f"Velocidade horizontal - ux   t= {t} s")
+        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
+        plt.scatter(Problema.x_nos[:,0], Problema.x_nos[:,1], c=resultados[t]["u"][:,0])
+        plt.colorbar()
+        plt.figure()
+        plt.suptitle(f"Velocidade vertical - uy   t= {t} s")
+        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
+        plt.scatter(Problema.x_nos[:, 0], Problema.x_nos[:, 1], c=resultados[t]["u"][:, 1])
+        plt.colorbar()
+        plt.figure()
+        plt.suptitle(f"Velocidade horizontal - u*x   t= {t} s")
+        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
+        plt.scatter(Problema.x_nos[:,0], Problema.x_nos[:,1], c=resultados[t]["u*"][:,0])
+        plt.colorbar()
+        plt.figure()
+        plt.suptitle(f"Pressao ficticia - p*   t= {t} s")
+        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
+        plt.scatter(Problema.x_nos_o1[:,0], Problema.x_nos_o1[:,1], c=resultados[t]["p*"])
+        plt.colorbar()
+        plt.figure()
+        plt.suptitle(f"Pressao - p   t= {t} s")
+        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
+        plt.scatter(Problema.x_nos_o1[:,0], Problema.x_nos_o1[:,1], c=resultados[t]["p"])
+        plt.colorbar()
+    # plotar_momento(Problema, resultados, 3)
+    plotar_momento(Problema, resultados, 10)
     # nome_malha = "Malha/teste.msh"
     # for ordem in (1, 2,):
     #     for n_teste in (1, 2, 3, 4):
@@ -1203,6 +1251,7 @@ if __name__ == "__main__":
     # teste_laplace(nome_malha, tag_fis, ordem=1, n_teste=2)
     # teste_laplace(nome_malha, tag_fis, ordem=2, n_teste=1)
     # teste_laplace(nome_malha, tag_fis, ordem=1, n_teste=1)
+    plt.show(block=False)
     plt.pause(10)
     plt.show(block=True)
     print("r")
