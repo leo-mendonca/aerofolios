@@ -7,16 +7,20 @@ n_pontos_contorno_padrao = 1000
 
 def malha_quadrada(nome_modelo, tamanho, ordem=2) :
     '''Gera uma malha quadrada no gmsh'''
-    contornos = {"esquerda" : 1, "direita" : 2, "superior" : 3, "inferior" : 4}
+    return malha_retangular(nome_modelo, tamanho, (1, 1), ordem)
+
+def malha_retangular(nome_modelo, tamanho, formato, ordem=2) :
+    contornos = {"esquerda": 1, "direita": 2, "superior": 3, "inferior": 4}
+    Lx,Ly=formato
     tag_fis = {}
     ##Inicializando o gmsh
     gmsh.initialize()
     gmsh.model.add(nome_modelo)  # adiciona um modelo
     gmsh.model.set_current(nome_modelo)  # define o modelo atual
     geo.addPoint(0, 0, 0, tamanho, tag=1)  # ponto inferior esquerdo
-    geo.addPoint(0, 1, 0, tamanho, tag=2)  # ponto superior esquerdo
-    geo.addPoint(1, 0, 0, tamanho, tag=3)  # ponto inferior direito
-    geo.addPoint(1, 1, 0, tamanho, tag=4)  # ponto superior direito
+    geo.addPoint(0, Ly, 0, tamanho, tag=2)  # ponto superior esquerdo
+    geo.addPoint(Lx, 0, 0, tamanho, tag=3)  # ponto inferior direito
+    geo.addPoint(Lx, Ly, 0, tamanho, tag=4)  # ponto superior direito
     geo.addLine(2, 1, tag=contornos["esquerda"])  # linha esquerda
     geo.addLine(4, 2, tag=contornos["superior"])  # linha superior
     geo.addLine(3, 4, tag=contornos["direita"])  # linha direita

@@ -98,10 +98,10 @@ def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False
         ##p=x²+y² --> nabla²p=4
         ##TODO debugar por que da ainda da erro na malha linear
         funcao_exata = lambda x: (x.T[0] ** 2 + x.T[1] ** 2) / 4
-        lado_direito = lambda x: x.T[0]*0 + 1
-    elif n_teste==4:
-        funcao_exata = lambda x: (1+x.T[0] ** 2 + 2*x.T[1] ** 2)
-        lado_direito = lambda x: x.T[0]*0 +6
+        lado_direito = lambda x: x.T[0] * 0 + 1
+    elif n_teste == 4:
+        funcao_exata = lambda x: (1 + x.T[0] ** 2 + 2 * x.T[1] ** 2)
+        lado_direito = lambda x: x.T[0] * 0 + 6
     if ordem == 1:
         nos = fea.nos_o1
     else:
@@ -168,7 +168,6 @@ def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False
         # eixo3.scatter(x_nos[erro_baixo].T[0], x_nos[erro_baixo].T[1], alpha=0.5)
         plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_malha.png"), bbox_inches="tight")
         plt.show(block=False)
-
 
 
 #
@@ -514,10 +513,14 @@ class FEA(object):
         self.aerofolio = aerofolio
         self.nos, self.x_nos, self.elementos, self.nos_cont, self.x_cont = Malha.ler_malha(nome_malha, tag_fis)
         self.nos_o1, self.elementos_o1 = Malha.reduz_ordem(self.elementos)
+        self.x_nos_o1= self.x_nos[self.nos_o1]
+        self.nos_cont_o1 = {chave: np.intersect1d(self.nos_o1, self.nos_cont[chave]) for chave in self.nos_cont.keys()}
         self.nos_faces = np.setdiff1d(self.nos, self.nos_o1)
         self.coefs_a_lin, self.coefs_b_lin, self.coefs_c_lin, self.dets_lin = self.funcoes_forma(ordem=1)  # coeficientes das funcoes de forma lineares
         self.coefs_o1 = np.dstack([self.coefs_a_lin, self.coefs_b_lin, self.coefs_c_lin])
         self.coefs_o2 = self.funcoes_forma(ordem=2)
+        self.coefs_o1_alfa = self.funcoes_forma_alfa(ordem=1)
+        self.coefs_o2_alfa = self.funcoes_forma_alfa(ordem=2)
         ##Fatores que auxiliam na integracao de qualquer expressao que possa ser escrita como rho1+ rho2*alfa + rho3*beta + rho4*alfa² ...
         self.fatores_integracao = np.array([[math.factorial(k) * math.factorial(n) / math.factorial(k + n + 2) for k in range(7)] for n in range(7)])
         self.fatores_rho = np.array([
@@ -633,9 +636,9 @@ class FEA(object):
         :param ordem_j: ordem do no j (1 ou 2). Corresponde tipicamente a ordem da funcao TENTATIVA
         '''
         area = self.dets_lin[l] / 2
-        if ordem_i == 1 and ordem_j==1:
+        if ordem_i == 1 and ordem_j == 1:
             valor = -2 * area * (self.coefs_b_lin[l, pos_i] * self.coefs_b_lin[l, pos_j] + self.coefs_c_lin[l, pos_i] * self.coefs_c_lin[l, pos_j])
-        elif ordem_i == 2 and ordem_j==2:
+        elif ordem_i == 2 and ordem_j == 2:
             ai, bi, ci, di, ei, fi = self.coefs_o2[l, pos_i]
             axi, bxi, cxi, ayi, byi, cyi = coefs_aux_grad_o2(ai, bi, ci, di, ei, fi, x, y)
             aj, bj, cj, dj, ej, fj = self.coefs_o2[l, pos_j]
@@ -650,15 +653,16 @@ class FEA(object):
                             axi * bxj + axj * bxi + ayi * byj + ayj * byi])
             ##O fator que multiplica cada entrada de rho eh dado por J_kn = k!n!/(k+n+2)!, onde k e n sao as potencias de alfa e beta, respectivamente
             valor = -2 * area * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
-        else: raise NotImplementedError(f"Nao implementado calculo do laplaciano com teste ordem {ordem_i} e tentativa ordem {ordem_j}")
+        else:
+            raise NotImplementedError(f"Nao implementado calculo do laplaciano com teste ordem {ordem_i} e tentativa ordem {ordem_j}")
         return valor
 
-    def procedimento_integracao_simples(self, l, pos_i, pos_j, x, y, ordem):
+    def procedimento_integracao_simples(self, l, pos_i, pos_j, x, y, ordem_i, ordem_j):
         '''Procedimento elementar que quando aplicado a um vetor de valores nodais de f(x), retorna a integral de f(x)*v'''
         det = self.dets_lin[l]
         # if x[0]>0 or y[0]>0:
         #     raise ValueError("Coordenadas do elemento nao estao modificadas para x0 ser 0")
-        if ordem == 1:
+        if ordem_i == 1 and ordem_j == 1:
             ai, bi, ci = self.coefs_o1[l, pos_i]
             aj, bj, cj = self.coefs_o1[l, pos_j]
             ai, bi, ci = coefs_aux_int_o1(ai, bi, ci, x, y)
@@ -672,7 +676,7 @@ class FEA(object):
                 bi * cj + bj * ci,
             ])
 
-        elif ordem == 2:
+        elif ordem_i == 2 and ordem_j == 2:
             a0i, b0i, c0i, d0i, e0i, f0i = self.coefs_o2[l, pos_i]
             a0j, b0j, c0j, d0j, e0j, f0j = self.coefs_o2[l, pos_j]
             ai, bi, ci, di, ei, fi = coefs_aux_int_o2(a0i, b0i, c0i, d0i, e0i, f0i, x, y)
@@ -694,7 +698,75 @@ class FEA(object):
                 di * fj + dj * fi,
                 ei * fj + ej * fi,
             ])
+        else:
+            raise NotImplementedError(f"Nao implementado calculo da integral com teste ordem {ordem_i} e tentativa ordem {ordem_j}")
         valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
+        return valor
+
+    def procedimento_derivx(self, l, pos_i, pos_j, x, y, ordem_i, ordem_j):
+        '''Procedimento elementar que quando aplicado a um vetor de valores nodais de f(x), retorna a integral de dNj(x)/dx*vi'''
+        det = self.dets_lin[l]
+        if ordem_i == 1 and ordem_j == 2:
+            ##Esse eh o caso relevante para a equacao da divergencia
+            api, bpi, cpi = self.coefs_o1_alfa[pos_i]
+            aj, bj, cj, dj, ej, fj = self.coefs_o2[l, pos_j]
+            rho = np.array([
+                api * bj,
+                api * (2 * dj * x[1] + fj * y[1]) + bpi * bj,
+                api * (2 * dj * x[2] + fj * y[2]) + cpi * bj,
+                bpi * (2 * dj * x[1] + fj * y[1]),
+                cpi * (2 * dj * x[2] + fj * y[2]),
+                bpi * (2 * dj * x[2] + fj * y[2]) + cpi * (2 * dj * x[1] + fj * y[1]),
+            ])
+            valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
+        elif ordem_i == 2 and ordem_j == 1:
+            api, bpi, cpi, dpi, epi, fpi = self.coefs_o2_alfa[pos_i]
+            aj, bj, cj = self.coefs_o1[l, pos_j]
+            rho = bj * np.array([
+                api,
+                bpi,
+                cpi,
+                dpi,
+                epi,
+                fpi,
+            ])
+            valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
+        else:
+            raise NotImplementedError(f"Nao implementado calculo da derivada com teste ordem {ordem_i} e tentativa ordem {ordem_j}")
+
+        return valor
+
+    def procedimento_derivy(self, l, pos_i, pos_j, x, y, ordem_i, ordem_j):
+        '''Procedimento elementar que quando aplicado a um vetor de valores nodais de f(x), retorna a integral de dNj(x)/dy*vi'''
+        det = self.dets_lin[l]
+        if ordem_i == 1 and ordem_j == 2:
+            ##Esse eh o caso relevante para a equacao da divergencia
+            api, bpi, cpi = self.coefs_o1_alfa[pos_i]
+            aj, bj, cj, dj, ej, fj = self.coefs_o2[l, pos_j]
+            rho = np.array([
+                api * cj,
+                api * (2 * ej * y[1] + fj * x[1]) + bpi * cj,
+                api * (2 * ej * y[2] + fj * x[2]) + cpi * cj,
+                bpi * (2 * ej * y[1] + fj * x[1]),
+                cpi * (2 * ej * y[2] + fj * x[2]),
+                bpi * (2 * ej * y[2] + fj * x[2]) + cpi * (2 * ej * y[1] + fj * x[1]),
+            ])
+            valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
+        elif ordem_i == 2 and ordem_j == 1:
+            api, bpi, cpi, dpi, epi, fpi = self.coefs_o2_alfa[pos_i]
+            aj, bj, cj = self.coefs_o1[l, pos_j]
+            rho = cj * np.array([
+                api,
+                bpi,
+                cpi,
+                dpi,
+                epi,
+                fpi,
+            ])
+            valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
+        else:
+            raise NotImplementedError(f"Nao implementado calculo da derivada com teste ordem {ordem_i} e tentativa ordem {ordem_j}")
+
         return valor
 
     def procedimento_integracao_num(self, l, pos_i, pos_j, x, y, ordem):
@@ -737,7 +809,7 @@ class FEA(object):
         A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos), len(nos)), dtype=np.float64)
         return A, b
 
-    def monta_matriz(self, procedimento, contornos_dirichlet=[], ordem=1):
+    def monta_matriz_old(self, procedimento, contornos_dirichlet=[], ordem=1):
         '''Monta a matriz A que, aplicada ao vetor de valores de u ou p, produz a integral de uma determinada grandeza (que depende do procedimento).
         Atua em todos os pontos nos quais nao ha condicao de dirichlet, mas nao realiza qualquer tipo de calculo no contorno
         Ex: montar matriz que corresponde a forma variacional da equacao de Laplace
@@ -781,12 +853,12 @@ class FEA(object):
         # A = A.tobsr()
         return A
 
-    def monta_matriz2(self, procedimento, contornos_dirichlet=[], ordem_teste=1, ordem_tentativa=1, ordem=None):
+    def monta_matriz(self, procedimento, contornos_dirichlet=[], ordem_teste=1, ordem_tentativa=1, ordem=None):
         '''Monta a matriz A que, aplicada ao vetor de valores de u ou p, produz a integral de uma determinada grandeza (que depende do procedimento).
         Atua em todos os pontos nos quais nao ha condicao de dirichlet, mas nao realiza qualquer tipo de calculo no contorno
         Exige a definicao da ordem da funcao de interpolacao para a funcao teste (v ou q) e para a funcao tentativa (u ou p)
         Se n_v eh o numero de nos da funcao teste, e n_u da funcao tentativa, a matriz A tera dimensao n_v x n_u, pois cada entrada da matriz corresponde a um par (v_i, u_j)'''
-        if not ordem is None: #Nesse caso, a ordem eh a mesma para teste e tentativa, e os parametros ordem_teste e ordem_tentativa sao ignorados
+        if not ordem is None:  # Nesse caso, a ordem eh a mesma para teste e tentativa, e os parametros ordem_teste e ordem_tentativa sao ignorados
             ordem_teste = ordem
             ordem_tentativa = ordem
         if ordem_teste == 1:
@@ -795,14 +867,16 @@ class FEA(object):
         elif ordem_teste == 2:
             elementos_teste = self.elementos
             nos_teste = self.nos
-        else: raise ValueError(f"Elementos de ordem {ordem_teste} nao sao suportados")
+        else:
+            raise ValueError(f"Elementos de ordem {ordem_teste} nao sao suportados")
         if ordem_tentativa == 1:
             elementos_tentativa = self.elementos_o1
             nos_tentativa = self.nos_o1
         elif ordem_tentativa == 2:
             elementos_tentativa = self.elementos
             nos_tentativa = self.nos
-        else: raise ValueError(f"Elementos de ordem {ordem_tentativa} nao sao suportados")
+        else:
+            raise ValueError(f"Elementos de ordem {ordem_tentativa} nao sao suportados")
         linhas, colunas, valores = [], [], []
         ###Definindo os pontos com condicao de dirichlet, onde a funcao tentativa eh nula
         pontos_dirichlet = np.concatenate([contornos_dirichlet[i][0] for i in range(len(contornos_dirichlet))])  # lista de todos os pontos com condicao de dirichlet
@@ -811,17 +885,17 @@ class FEA(object):
             elementos_i = np.where(elementos_teste == i)[0]  # lista de elementos que contem o ponto i
             for l in elementos_i:  # varremos cada elemento no qual N_i != 0
                 pos_i = np.nonzero(elementos_teste[l] == i)[0][0]  # posicao do ponto i no elemento l
-                if ordem_teste == 1 :
+                if ordem_teste == 1:
                     ind_i = np.nonzero(nos_teste == i)[0][0]  # indice do ponto i no vetor de nos
-                elif ordem_teste == 2 :
+                elif ordem_teste == 2:
                     ind_i = i
                 for j in elementos_tentativa[l]:  # varremos os pontos da funcao TENTATIVA no elemento l
                     x_abs, y_abs, z_abs = self.x_nos[elementos_tentativa[l]].T
                     x, y = x_abs - x_abs[0], y_abs - y_abs[0]
                     pos_j = np.nonzero(elementos_tentativa[l] == j)[0][0]  # posicao do ponto j no elemento l
-                    if ordem_tentativa == 1 :
+                    if ordem_tentativa == 1:
                         ind_j = np.nonzero(nos_tentativa == j)[0][0]
-                    elif ordem_tentativa == 2 :
+                    elif ordem_tentativa == 2:
                         ind_j = j
                     valor = procedimento(l, pos_i, pos_j, x, y, ordem_teste, ordem_tentativa)
                     ##TODO reescrever os procedimentos para permitir ordens cruzadas
@@ -829,12 +903,11 @@ class FEA(object):
                     colunas.append(ind_j)
                     valores.append(valor)
 
-
         A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos_teste), len(nos_tentativa)), dtype=np.float64)
         return A
 
     def matriz_laplaciano_escalar(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1):
-        A = self.monta_matriz(self.procedimento_laplaciano, contornos_dirichlet, ordem)
+        A = self.monta_matriz(self.procedimento_laplaciano, contornos_dirichlet, ordem=ordem)
         return A
 
     def integrar_expressao(self, expressao, elemento, n):
@@ -856,13 +929,6 @@ class FEA(object):
         if ordem == 1:
             elementos = self.elementos_o1
             nos = self.nos_o1
-        elif ordem == 2:
-            elementos = self.elementos
-            nos = self.nos
-        else:
-            raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
-        ##TODO definir coordenadas de area (iguais a N_i para elementos de ordem 1) e implementar funcoes de forma de ordem 2
-        if ordem == 1:
             coefs_a = np.zeros(shape=elementos.shape, dtype=np.float64)
             coefs_b = np.zeros(shape=elementos.shape, dtype=np.float64)
             coefs_c = np.zeros(shape=elementos.shape, dtype=np.float64)
@@ -882,6 +948,8 @@ class FEA(object):
                     coefs_c[n, i] = (x[k] - x[j]) / det_A
             return coefs_a, coefs_b, coefs_c, dets
         elif ordem == 2:
+            elementos = self.elementos
+            nos = self.nos
             coefs = np.zeros(shape=(len(elementos), 6, 6), dtype=np.float64)  # array N x 6 x 6 contendo todos os coeficientes da funcao N em cada no em cada elemento
             ##A funcao de forma eh da forma N(x,y)= a + bx + cy + dx² + ey² + fxy
             ##A matriz de coeficientes eh da forma [a, b, c, d, e, f]
@@ -894,6 +962,31 @@ class FEA(object):
                     b = np.identity(6)[i]
                     coefs[n, i] = np.linalg.solve(matriz, b)
             return coefs
+        else:
+            raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
+
+    def funcoes_forma_alfa(self, ordem=1):
+        '''Calcula os coeficientes das funcoes de forma para cada elemento da malha, escrevendo a funcao de forma em funcao de alfa e beta (e.g. N=a+b*alfa+c*beta)
+        Onde x= x0+ alfa*x1 + beta*x2, y=y0+ alfa*y1 + beta*y2
+        Nesse caso, nao eh preciso um array de coeficientes para cada elemento, pois os coeficientes sao iguais em todos os elementos
+        '''
+        if ordem == 1:
+            alfa = np.array([0, 1, 0])
+            beta = np.array([0, 0, 1])
+            n = 3  # numero de nos no elemento
+            matriz = np.vstack([np.ones(n), alfa, beta]).T
+        elif ordem == 2:
+            alfa = np.array([0, 1, 0, .5, .5, 0])
+            beta = np.array([0, 0, 1, 0, .5, .5])
+            n = 6
+            matriz = np.vstack([np.ones(n), alfa, beta, alfa ** 2, beta ** 2, alfa * beta]).T
+        else:
+            raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
+        coefs = np.zeros(shape=(n, n), dtype=np.float64)
+        for i in range(n):
+            b = np.identity(n)[i]
+            coefs[i] = np.linalg.solve(matriz, b)
+        return coefs
 
     def N(self, no, elemento, x, ordem=1):
         '''Calcula a funcao de forma N_no(x,y) no elemento dado, para um ponto (x,y) qualquer
@@ -974,29 +1067,138 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_Stokes(self, T=10.,dt=0.1, contornos_dirichlet=[]):
+    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
+        Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
         :param T: tempo total do escoamento
         :param dt: medida do passo de tempo a cada iteracao
+        :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
         '''
+        ##Definindo a estrutura da matriz de solucao
+        n = len(self.nos)
+        k = len(self.nos_o1)
+        m = 2 * n + k  # duas dimensoes de velocidade (ordem 2) e uma de pressao (ordem 1)
+
         ##Inicializando os vetores de solucao
-        u=np.zeros(self.nos.shape, dtype=np.float64)
-        p=np.zeros(self.nos_o1.shape, dtype=np.float64) #a ordem dos elementos da pressao deve ser menor que da velocidade
-        u_ast=np.zeros(self.nos.shape, dtype=np.float64)
-        mat_lap_o1=self.matriz_laplaciano_escalar(contornos_dirichlet=contornos_dirichlet,ordem=1)
-        mat_lap_o2=self.matriz_laplaciano_escalar(contornos_dirichlet=contornos_dirichlet,ordem=2)
-        mat_integracao_o1=self.monta_matriz()
+        u_n = np.zeros((len(self.nos), 2), dtype=np.float64)
+        p_n = np.zeros(self.nos_o1.shape, dtype=np.float64)  # a ordem dos elementos da pressao deve ser menor que da velocidade
+        u_ast = np.zeros(self.nos.shape, dtype=np.float64)
+
+        ##Aplicando condicoes de dirichlet nos valores iniciais
+        for (cont, funcao) in ux_dirichlet:
+            for no in cont:
+                u_n[no, 0] = funcao(self.x_nos[no])
+        for (cont, funcao) in uy_dirichlet:
+            for no in cont:
+                u_n[no, 1] = funcao(self.x_nos[no])
+        for (cont, funcao) in p_dirichlet:
+            for no in cont:
+                p_n[no] = funcao(self.x_nos[no])
+
+        print(u"Montando as matrizes a serem usados pelo Método de Elementos Finitos")
+        t1=time.process_time()
+        ##Montando as matrizes principais fora do loop
+        mat_lap_o1 = self.matriz_laplaciano_escalar(contornos_dirichlet=p_dirichlet, ordem=1)
+        mat_lap_o2 = self.matriz_laplaciano_escalar(contornos_dirichlet=ux_dirichlet, ordem=2)
+        mat_integracao_o1 = self.monta_matriz(procedimento=self.procedimento_integracao_simples, contornos_dirichlet=p_dirichlet, ordem=1)
+        mat_integracao_o2 = self.monta_matriz(procedimento=self.procedimento_integracao_simples, contornos_dirichlet=ux_dirichlet, ordem=2)
+        mat_gradp_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=1)
+        mat_gradp_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=1)
+        mat_gradu_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
+        mat_gradu_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
+        ##u_ast
+        matriz_bloco1 = mat_integracao_o2 / dt + mat_lap_o2 / Re
+        A_dirich_ux, b_dirich_ux = self.monta_matriz_dirichlet(ux_dirichlet, ordem=2)
+        A_dirich_uy, b_dirich_uy = self.monta_matriz_dirichlet(uy_dirichlet, ordem=2)
+        A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
+        ##p_ast
+        A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
+        b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
+        A_p = mat_lap_o1 + A_dirich_p
+        ##u
+        A_ux = mat_integracao_o2 / dt + A_dirich_ux
+        A_uy = mat_integracao_o2 / dt + A_dirich_uy
+        A_u = ssp.bmat([[A_ux, None], [None, A_uy]], format="csr")
+        t2=time.process_time()
+        print(f"Tempo de montagem das matrizes: {t2-t1:.2f} s")
+
+        resultados={} #Dicionario contendo os resultados da simulacao para alguns passos de tempo
+
+        tempos = np.arange(0, T + dt, dt)
+        for t in tempos:
+            print(f"Resolvendo para t={t}")
+            t1=time.process_time()
+            ##Calculando u*
+            # A matriz de solucao tem formato (2px2p), pois diz respeito apenas a velocidade
+            vetor_un = np.concatenate(((mat_integracao_o2 / dt) @ u_n[:, 0], (mat_integracao_o2 / dt) @ u_n[:, 1]))
+            vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
+            vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
+            u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un + vetor_gradp + vetor_dirich_u)
+            u_ast = u_ast.reshape((len(self.nos), 2))
+            ##Calculando p*
+
+            div_u_ast = mat_gradu_x @ u_ast[:, 0] + mat_gradu_y @ u_ast[:, 1]
+            p_ast = ssp.linalg.spsolve(A_p, div_u_ast + b_dirich_p)
+            ##Calculando p_n+1
+            p = p_n + p_ast
+            ##Calculando u_n+1
+
+            vetor_u_ast = np.concatenate((mat_integracao_o2 @ u_ast[:, 0], mat_integracao_o2 @ u_ast[:, 1]))
+            vetor_gradp = np.concatenate((mat_gradp_x @ p_ast, mat_gradp_y @ p_ast))
+            b_u = vetor_u_ast / dt - vetor_gradp
+            u = ssp.linalg.spsolve(A_u, b_u)
+            u=u.reshape((len(self.nos), 2))
+            t2=time.process_time()
+            print(f"Tempo de resolucao: {t2-t1:.2f} s")
+            ##TODO fazer uma comparacao com solucao analitica
+            if np.isclose(t%1,0):
+                resultados[t]={"u":u, "u*":u_ast, "p":p, "p*":p_ast}
+            u_n=u.copy()
+            p_n=p.copy()
+
+
+        return resultados
+
 
 if __name__ == "__main__":
     import AerofolioFino
 
     tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
-    nome_malha, tag_fis= Malha.malha_quadrada("teste", 0.05)
+    nome_malha = "Malha/teste 5-1.msh"
+    # nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", 0.1, (5,1))
+
+    Problema = FEA(nome_malha, tag_fis)
+    zero_u = np.zeros(shape=len(Problema.nos), dtype=np.float64)
+    ux_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x: 1.),
+        (Problema.nos_cont["superior"], lambda x: 0.),
+        (Problema.nos_cont["inferior"], lambda x: 0.),
+    ]
+    uy_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x: 0.),
+        (Problema.nos_cont["superior"], lambda x: 0.),
+        (Problema.nos_cont["inferior"], lambda x: 0.),
+    ]
+    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.)]
+    resultados=Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1)
+    ux=resultados[10]["u"][:,0]
+    plt.figure()
+    plt.suptitle("Velocidade horizontal - ux")
+    plt.scatter(Problema.x_nos[:,0], Problema.x_nos[:,1], c=ux)
+    plt.colorbar()
+    plt.figure()
+    plt.suptitle("Velocidade vertical - uy")
+    plt.scatter(Problema.x_nos[:,0], Problema.x_nos[:,1], c=resultados[0]["u"][:,1])
+    plt.colorbar()
+    plt.figure()
+    plt.suptitle("Pressao")
+    plt.scatter(Problema.x_nos_o1[:,0], Problema.x_nos_o1[:,1], c=resultados[10]["p"])
+    plt.colorbar()
     # nome_malha = "Malha/teste.msh"
-    for ordem in (2,):
-        for n_teste in (3,):
-            teste_laplace(nome_malha, tag_fis, ordem=ordem, n_teste=n_teste, plota=True, gauss=False)
+    # for ordem in (1, 2,):
+    #     for n_teste in (1, 2, 3, 4):
+    #         teste_laplace(nome_malha, tag_fis, ordem=ordem, n_teste=n_teste, plota=True, gauss=False)
     # teste_laplace(nome_malha, tag_fis, ordem=2, n_teste=2)
     # teste_laplace(nome_malha, tag_fis, ordem=1, n_teste=2)
     # teste_laplace(nome_malha, tag_fis, ordem=2, n_teste=1)
