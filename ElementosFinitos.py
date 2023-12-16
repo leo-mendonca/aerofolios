@@ -169,6 +169,23 @@ def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False
         plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_malha.png"), bbox_inches="tight")
         plt.show(block=False)
 
+def produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2):
+    '''Calcula, em cada par j,k de nos em cada elemento da malha, o produto ux_i*uy_j dos valores nodais
+    Usado para calcular o termo de conveccao do problema de Navier-Stokes
+    Se ux=uy, calcula o produto cartesiano de uma mesma variavel
+    :param ux_elementos: np.ndarray n_ex6. array de elementos contendo o valor de ux em cada no de cada elemento
+    :return produtos: np.ndarray 6x6xn_e. array de elementos contendo o produto cartesiano de ux e uy em cada par de nos de cada elemento'''
+    if ordem==1: nos=3
+    elif ordem==2: nos=6
+    else: raise NotImplementedError("Ordem de elementos nao implementada")
+    ux_grid=np.stack([ux_elementos.T for _ in range(nos)], axis=1)
+    uy_grid=np.stack([uy_elementos.T for _ in range(nos)], axis=0)
+    produtos=ux_grid*uy_grid
+    return produtos
+
+
+
+
 
 #
 # class SolucaoEscoamento2:
@@ -536,9 +553,16 @@ class FEA(object):
             self.fatores_integracao[1, 2],
             self.fatores_integracao[4, 0],
             self.fatores_integracao[0, 4],
-            self.fatores_integracao[2, 2],
             self.fatores_integracao[3, 1],
+            self.fatores_integracao[2,2],
             self.fatores_integracao[1, 3],
+            self.fatores_integracao[5, 0],
+            self.fatores_integracao[0, 5],
+            self.fatores_integracao[4, 1],
+            self.fatores_integracao[3, 2],
+            self.fatores_integracao[2, 3],
+            self.fatores_integracao[1, 4],
+
         ])
 
     def matriz_laplaciano_escalar2(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1, verbose=False, gauss=False):
@@ -694,8 +718,8 @@ class FEA(object):
                 bi * ej + bj * ei + ci * fj + cj * fi,
                 di * dj,
                 ei * ej,
-                di * ej + dj * ei + fi * fj,
                 di * fj + dj * fi,
+                di * ej + dj * ei + fi * fj,
                 ei * fj + ej * fi,
             ])
         else:
@@ -907,6 +931,10 @@ class FEA(object):
         A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos_teste), len(nos_tentativa)), dtype=np.float64)
         return A
 
+    def monta_tensor_convectivo(self, derivada="x", ordem=2):
+        '''Monta o tensor correspondente a integral do termo de conveccao Ni*Nj*dNk/dx'''
+        if derivada=="x"
+
     def matriz_laplaciano_escalar(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1):
         A = self.monta_matriz(self.procedimento_laplaciano, contornos_dirichlet, ordem=ordem)
         return A
@@ -1068,13 +1096,14 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None):
+    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
         :param T: tempo total do escoamento
         :param dt: medida do passo de tempo a cada iteracao
         :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
+        :param conveccao: bool. Se True, considera a conveccao na equacao de Navier-Stokes. Se False, supoe que o termo convectivo eh desprezivel, caindo na equacao de Stokes
         '''
         ##Definindo a estrutura da matriz de solucao
         n = len(self.nos)
@@ -1086,7 +1115,6 @@ class FEA(object):
         p_n = np.zeros(self.nos_o1.shape, dtype=np.float64)  # a ordem dos elementos da pressao deve ser menor que da velocidade
 
         ##Aplicando condicoes de dirichlet nos valores iniciais
-        ##TODO ele so esta aplicando as condicoes de dirichlet nos vertices, mas nao nos nos laterais. Por que?
         for (cont, funcao) in ux_dirichlet:
             for no in cont:
                 u_n[no, 0] = funcao(self.x_nos[no])
@@ -1134,6 +1162,14 @@ class FEA(object):
             t1 = time.process_time()
             ##Calculando u*
             # A matriz de solucao tem formato (2px2p), pois diz respeito apenas a velocidade
+            if conveccao:
+                ux_elementos=u_n[:,0][self.elementos]
+                uy_elementos=u_n[:,1][self.elementos]
+                produtos_uxuy= produto_cartesiano_nodais(ux_elementos,uy_elementos, ordem=2) #um tensor 6x6xn_e, onde n_e eh o numero de elementos
+                produtos_uxux= produto_cartesiano_nodais(ux_elementos,ux_elementos, ordem=2)
+                produtos_uyuy= produto_cartesiano_nodais(uy_elementos,uy_elementos, ordem=2)
+
+
             vetor_un = np.concatenate(((mat_integracao_o2) @ u_n[:, 0], (mat_integracao_o2) @ u_n[:, 1]))
             vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
             u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un / dt - vetor_gradp + vetor_dirich_u)
@@ -1210,6 +1246,15 @@ if __name__ == "__main__":
 
     # tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
     # nome_malha = "Malha/teste 5-1.msh"
+    # ##Teste do produto cartesiano
+    # matriz_teste1=np.random.random((42, 6))
+    # matriz_teste2 = np.random.random((42, 6))
+    # prod=produto_cartesiano_nodais(matriz_teste1, matriz_teste2, ordem=2)
+    # for i in range(6):
+    #     for j in range(6):
+    #         if np.any(prod[i,j]!=matriz_teste1[:,i]*matriz_teste2[:,j]):
+    #             print(f"Erro no elemento ({i}, {j}")
+
     nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", 0.05, (5, 1))
 
     Problema = FEA(nome_malha, tag_fis)
