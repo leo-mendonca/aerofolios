@@ -931,9 +931,62 @@ class FEA(object):
         A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos_teste), len(nos_tentativa)), dtype=np.float64)
         return A
 
-    def monta_tensor_convectivo(self, derivada="x", ordem=2):
+    def monta_tensor_convectivo(self, ordem=2):
         '''Monta o tensor correspondente a integral do termo de conveccao Ni*Nj*dNk/dx'''
-        if derivada=="x"
+        if ordem==2:
+            p=6
+            elementos=self.elementos
+        else: raise NotImplementedError(f"Ainda nao implementado para ordem {ordem}")
+        ###Definicao da expressao dos termos q,r,s que definem dN/dx= q + r*alfa + s*beta
+        calc_qrs={"x":lambda a,b,c,d,e,f, x, y: (b,2*d*x[1]+f*y[1], 2*d*x[2]+f*y[2]),
+                  "y": lambda a,b,c,d,e,f, x, y: (c,2*e*y[1]+f*x[1], 2*e*y[2]+f*x[2])}
+        n_elem=len(self.elementos)
+        tensores= {"x":np.zeros((n_elem, p, p, p)), "y":np.zeros((n_elem, p, p, p))}
+        #O tensor sera simetrico entre i e j, logo nao eh necessario fazer o loop para j>i
+        x_elem=self.x_nos[elementos]
+        for l in range(n_elem):
+            x,y,z=(x_elem[l]-x_elem[l,0]).T
+            det=self.dets_lin[l]
+            for i in range(p):
+                ai,bi,ci,di,ei,fi=self.coefs_o2_alfa[i]
+                for j in range(6-i):
+                    aj,bj,cj,dj,ej,fj=self.coefs_o2_alfa[j]
+                    for k in range(6):
+                        ak,bk,ck,dk,ek,fk=self.coefs_o2_alfa[k]
+                        for direcao_derivada in ("x","y"):
+                            q,r,s=calc_qrs[direcao_derivada](ak,bk,ck,dk,ek,fk,x,y)
+                            rho=np.array([
+                                ai * aj * q, #constante
+                                ai * aj * r + ai * bj * q + aj * bi * q, #alfa
+                                ai * bj * r + ai * dj * q + aj * bi * r + aj * di * q + bi * bj * q, #beta
+                                ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q, #alfa²
+                                ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q, #beta²
+                                ai * bj * s + ai * cj * r + ai * fj * q + aj * bi * s + aj * ci * r + aj * fi * q + bi * cj * q + bj * ci * q, #alfa*beta
+                                ai * dj * r + aj * di * r + bi * bj * r + bi * dj * q + bj * di * q, #alfa³
+                                ai * ej * s + aj * ei * s + ci * cj * s + ci * ej * q + cj * ei * q, #beta³
+                                ai * dj * s + ai * fj * r + aj * di * s + aj * fi * r + bi * bj * s + bi * cj * r + bi * fj * q + bj * ci * r + bj * fi * q + ci * dj * q + cj * di * q, #alfa²*beta
+                                ai * ej * r + ai * fj * s + aj * ei * r + aj * fi * s + bi * cj * s + bi * ej * q + bj * ci * s + bj * ei * q + ci * cj * r + ci * fj * q + cj * fi * q, #alfa*beta²
+                                bi * dj * r + bj * di * r + di * dj * q, #alfa⁴
+                                ci * ej * s + cj * ei * s + ei * ej * q, #beta⁴
+                                bi * dj * s + bi * fj * r + bj * di * s + bj * fi * r + ci * dj * r + cj * di * r + di * fj * q + dj * fi * q, #alfa³*beta
+                                bi * ej * r + bi * fj * s + bj * ei * r + bj * fi * s + ci * dj * s + ci * fj * r + cj * di * s + cj * fi * r + di * ej * q + dj * ei * q + fi * fj * q, #alfa²*beta²
+                                bi * ej * s + bj * ei * s + ci * ej * r + ci * fj * s + cj * ei * r + cj * fi * s + ei * fj * q + ej * fi * q, #alfa*beta³
+                                di * dj * r, #alfa⁵
+                                ei * ej * s, #beta⁵
+                                di * dj * s + di * fj * r + dj * fi * r, #alfa⁴*beta
+                                di * ej * r + di * fj * s + dj * ei * r + dj * fi * s + fi * fj * r, #alfa³*beta²
+                                di * ej * s + dj * ei * s + ei * fj * r + ej * fi * r + fi * fj * s, #alfa²*beta³
+                                ei * ej * r + ei * fj * s + ej * fi * s, #alfa*beta⁴
+                            ])
+                            integracao=det*(rho*self.fatores_rho[:len(rho)]).sum(axis=0)
+                            tensores[direcao_derivada][l,i,j,k]=integracao
+                            tensores[direcao_derivada][l,j,i,k]=integracao
+        return tensores["x"], tensores["y"]
+
+
+
+
+
 
     def matriz_laplaciano_escalar(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1):
         A = self.monta_matriz(self.procedimento_laplaciano, contornos_dirichlet, ordem=ordem)
@@ -1255,9 +1308,12 @@ if __name__ == "__main__":
     #         if np.any(prod[i,j]!=matriz_teste1[:,i]*matriz_teste2[:,j]):
     #             print(f"Erro no elemento ({i}, {j}")
 
-    nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", 0.05, (5, 1))
+    # nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", 0.05, (5, 1))
+    nome_malha, tag_fis=Malha.malha_quadrada("grosseira", 0.1)
 
     Problema = FEA(nome_malha, tag_fis)
+    ##Teste da criacao do tensor convectivo
+    Dx, Dy=Problema.monta_tensor_convectivo(ordem=2)
     zero_u = np.zeros(shape=len(Problema.nos), dtype=np.float64)
     ux_dirichlet = [
         (Problema.nos_cont["esquerda"], lambda x: 1.),
