@@ -169,6 +169,23 @@ def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False
         plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_malha.png"), bbox_inches="tight")
         plt.show(block=False)
 
+def produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2):
+    '''Calcula, em cada par j,k de nos em cada elemento da malha, o produto ux_i*uy_j dos valores nodais
+    Usado para calcular o termo de conveccao do problema de Navier-Stokes
+    Se ux=uy, calcula o produto cartesiano de uma mesma variavel
+    :param ux_elementos: np.ndarray n_ex6. array de elementos contendo o valor de ux em cada no de cada elemento
+    :return produtos: np.ndarray 6x6xn_e. array de elementos contendo o produto cartesiano de ux e uy em cada par de nos de cada elemento'''
+    if ordem==1: nos=3
+    elif ordem==2: nos=6
+    else: raise NotImplementedError("Ordem de elementos nao implementada")
+    ux_grid=np.stack([ux_elementos.T for _ in range(nos)], axis=1)
+    uy_grid=np.stack([uy_elementos.T for _ in range(nos)], axis=0)
+    produtos=ux_grid*uy_grid
+    return produtos
+
+
+
+
 
 #
 # class SolucaoEscoamento2:
@@ -513,7 +530,7 @@ class FEA(object):
         self.aerofolio = aerofolio
         self.nos, self.x_nos, self.elementos, self.nos_cont, self.x_cont = Malha.ler_malha(nome_malha, tag_fis)
         self.nos_o1, self.elementos_o1 = Malha.reduz_ordem(self.elementos)
-        self.x_nos_o1= self.x_nos[self.nos_o1]
+        self.x_nos_o1 = self.x_nos[self.nos_o1]
         self.nos_cont_o1 = {chave: np.intersect1d(self.nos_o1, self.nos_cont[chave]) for chave in self.nos_cont.keys()}
         self.nos_faces = np.setdiff1d(self.nos, self.nos_o1)
         self.coefs_a_lin, self.coefs_b_lin, self.coefs_c_lin, self.dets_lin = self.funcoes_forma(ordem=1)  # coeficientes das funcoes de forma lineares
@@ -536,9 +553,16 @@ class FEA(object):
             self.fatores_integracao[1, 2],
             self.fatores_integracao[4, 0],
             self.fatores_integracao[0, 4],
-            self.fatores_integracao[2, 2],
             self.fatores_integracao[3, 1],
+            self.fatores_integracao[2,2],
             self.fatores_integracao[1, 3],
+            self.fatores_integracao[5, 0],
+            self.fatores_integracao[0, 5],
+            self.fatores_integracao[4, 1],
+            self.fatores_integracao[3, 2],
+            self.fatores_integracao[2, 3],
+            self.fatores_integracao[1, 4],
+
         ])
 
     def matriz_laplaciano_escalar2(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1, verbose=False, gauss=False):
@@ -694,8 +718,8 @@ class FEA(object):
                 bi * ej + bj * ei + ci * fj + cj * fi,
                 di * dj,
                 ei * ej,
-                di * ej + dj * ei + fi * fj,
                 di * fj + dj * fi,
+                di * ej + dj * ei + fi * fj,
                 ei * fj + ej * fi,
             ])
         else:
@@ -718,7 +742,7 @@ class FEA(object):
                 cpi * (2 * dj * x[2] + fj * y[2]),
                 bpi * (2 * dj * x[2] + fj * y[2]) + cpi * (2 * dj * x[1] + fj * y[1]),
             ])
-            #Integracao de rho0+rho1*alfa+rho2*beta+rho3*alfa²+rho4*beta²+rho5*alfa*beta
+            # Integracao de rho0+rho1*alfa+rho2*beta+rho3*alfa²+rho4*beta²+rho5*alfa*beta
             valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
         elif ordem_i == 2 and ordem_j == 1:
             api, bpi, cpi, dpi, epi, fpi = self.coefs_o2_alfa[pos_i]
@@ -907,6 +931,10 @@ class FEA(object):
         A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos_teste), len(nos_tentativa)), dtype=np.float64)
         return A
 
+    def monta_tensor_convectivo(self, derivada="x", ordem=2):
+        '''Monta o tensor correspondente a integral do termo de conveccao Ni*Nj*dNk/dx'''
+        if derivada=="x"
+
     def matriz_laplaciano_escalar(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1):
         A = self.monta_matriz(self.procedimento_laplaciano, contornos_dirichlet, ordem=ordem)
         return A
@@ -1068,13 +1096,14 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None):
+    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
         :param T: tempo total do escoamento
         :param dt: medida do passo de tempo a cada iteracao
         :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
+        :param conveccao: bool. Se True, considera a conveccao na equacao de Navier-Stokes. Se False, supoe que o termo convectivo eh desprezivel, caindo na equacao de Stokes
         '''
         ##Definindo a estrutura da matriz de solucao
         n = len(self.nos)
@@ -1086,7 +1115,6 @@ class FEA(object):
         p_n = np.zeros(self.nos_o1.shape, dtype=np.float64)  # a ordem dos elementos da pressao deve ser menor que da velocidade
 
         ##Aplicando condicoes de dirichlet nos valores iniciais
-        ##TODO ele so esta aplicando as condicoes de dirichlet nos vertices, mas nao nos nos laterais. Por que?
         for (cont, funcao) in ux_dirichlet:
             for no in cont:
                 u_n[no, 0] = funcao(self.x_nos[no])
@@ -1098,7 +1126,7 @@ class FEA(object):
                 p_n[no] = funcao(self.x_nos[no])
 
         print(u"Montando as matrizes a serem usados pelo Método de Elementos Finitos")
-        t1=time.process_time()
+        t1 = time.process_time()
         ##Montando as matrizes principais fora do loop
         mat_lap_o1 = self.matriz_laplaciano_escalar(contornos_dirichlet=p_dirichlet, ordem=1)
         mat_lap_o2 = self.matriz_laplaciano_escalar(contornos_dirichlet=ux_dirichlet, ordem=2)
@@ -1123,25 +1151,33 @@ class FEA(object):
         A_ux = mat_integracao_o2 / dt + A_dirich_ux
         A_uy = mat_integracao_o2 / dt + A_dirich_uy
         A_u = ssp.bmat([[A_ux, None], [None, A_uy]], format="csr")
-        t2=time.process_time()
-        print(f"Tempo de montagem das matrizes: {t2-t1:.2f} s")
+        t2 = time.process_time()
+        print(f"Tempo de montagem das matrizes: {t2 - t1:.2f} s")
 
-        resultados={} #Dicionario contendo os resultados da simulacao para alguns passos de tempo
+        resultados = {}  # Dicionario contendo os resultados da simulacao para alguns passos de tempo
 
         tempos = np.arange(0, T + dt, dt)
         for t in tempos:
             print(f"Resolvendo para t={t}")
-            t1=time.process_time()
+            t1 = time.process_time()
             ##Calculando u*
             # A matriz de solucao tem formato (2px2p), pois diz respeito apenas a velocidade
+            if conveccao:
+                ux_elementos=u_n[:,0][self.elementos]
+                uy_elementos=u_n[:,1][self.elementos]
+                produtos_uxuy= produto_cartesiano_nodais(ux_elementos,uy_elementos, ordem=2) #um tensor 6x6xn_e, onde n_e eh o numero de elementos
+                produtos_uxux= produto_cartesiano_nodais(ux_elementos,ux_elementos, ordem=2)
+                produtos_uyuy= produto_cartesiano_nodais(uy_elementos,uy_elementos, ordem=2)
+
+
             vetor_un = np.concatenate(((mat_integracao_o2) @ u_n[:, 0], (mat_integracao_o2) @ u_n[:, 1]))
             vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
-            u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un/dt - vetor_gradp + vetor_dirich_u)
-            u_ast = u_ast.reshape(( 2, len(self.nos))).T
+            u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un / dt - vetor_gradp + vetor_dirich_u)
+            u_ast = u_ast.reshape((2, len(self.nos))).T
 
             ##Calculando p*
             div_u_ast = mat_gradu_x @ u_ast[:, 0] + mat_gradu_y @ u_ast[:, 1]
-            b_p=div_u_ast/dt + b_dirich_p
+            b_p = div_u_ast / dt + b_dirich_p
             p_ast = ssp.linalg.spsolve(A_p, b_p)
 
             ##Calculando p_n+1
@@ -1152,42 +1188,74 @@ class FEA(object):
             vetor_gradp = np.concatenate((mat_gradp_x @ p_ast, mat_gradp_y @ p_ast))
             b_u = vetor_u_ast / dt - vetor_gradp + vetor_dirich_u
             u = ssp.linalg.spsolve(A_u, b_u)
-            u=u.reshape((2, len(self.nos))).T
-            t2=time.process_time()
-            print(f"Tempo de resolucao: {t2-t1:.2f} s")
+            u = u.reshape((2, len(self.nos))).T
+            t2 = time.process_time()
+            print(f"Tempo de resolucao: {t2 - t1:.2f} s")
             if not solucao_analitica is None:
                 if not regiao_analitica is None:
-                    pontos_an=self.nos[regiao_analitica(self.x_nos)] #separa apenas os nos selecionados para avaliar a solucao analitica
+                    pontos_an = self.nos[regiao_analitica(self.x_nos)]  # separa apenas os nos selecionados para avaliar a solucao analitica
                 else:
-                    pontos_an=self.nos
-                u_an=solucao_analitica(Problema.x_nos[pontos_an])
-                erro=u[pontos_an]-u_an
+                    pontos_an = self.nos
+                u_an = solucao_analitica(Problema.x_nos[pontos_an])
+                erro = u[pontos_an] - u_an
                 print(f"Erro maximo: {np.max(np.abs(erro), axis=0)}")
-                print(f"Erro RMS: {np.sqrt(np.average(erro**2, axis=0))}")
+                print(f"Erro RMS: {np.sqrt(np.average(erro ** 2, axis=0))}")
                 print(f"Erro medio: {np.average(erro, axis=0)}")
 
-
-            if np.isclose(t%1,0):
-                resultados[t]={"u":u, "u*":u_ast, "p":p, "p*":p_ast}
-            u_n=u.copy()
-            p_n=p.copy()
+            if np.isclose(t % 1, 0):
+                resultados[t] = {"u": u, "u*": u_ast, "p": p, "p*": p_ast}
+            u_n = u.copy()
+            p_n = p.copy()
         return resultados
 
-    def localiza_elemento(self,x):
+    def localiza_elemento(self, x, y):
         '''Dada um ponto, localiza em que elemento da malha ele se encontra'''
-        alfa=1/self.dets_lin
-        ##TODO implementar
 
+        pontos = self.x_nos[self.elementos_o1]
+        x0, y0 = pontos[:, 0, :2].T  # vetor de pontos 0 de cada elemento
+        x1, y1 = pontos[:, 1, :2].T
+        x2, y2 = pontos[:, 2, :2].T
+        pontos = None
+        alfa = ((x - x0) * (y2 - y0) - (x2 - x0) * (y - y0)) / self.dets_lin  # vetor de coordenadas alfa do ponto em cada elemento
+        beta = ((x1 - x0) * (y - y0) - (x - x0) * (y1 - y0)) / self.dets_lin  # vetor de coordenadas beta do ponto em cada elemento
+        elemento = np.nonzero((alfa >= 0) & (beta >= 0) & (alfa + beta <= 1))[0][0]  # indice do primeiro elemento em que o ponto esta contido
+        return elemento
 
+    def interpola(self, x, u, ordem=1):
+        '''Interpola a solucao u para um ponto (x,y) qualquer
+        :param x: array_like N×2. Array de pares de coordenadas do ponto em que se deseja calcular a funcao de forma
+        :param u: array_like N×2. Array de valores da solucao nos nos da malha
+        :param ordem: int. Ordem do elemento em que se deseja interpolar a solucao
+        '''
+
+        elemento = self.localiza_elemento(x[0], x[1])
+        if ordem == 1:
+            elementos = self.elementos_o1
+        elif ordem == 2:
+            elementos = self.elementos
+        else:
+            raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
+        nos = elementos[elemento]
+        soma = sum([self.N(no, elemento, x, ordem=ordem) * u[no] for no in nos])
+        return soma
 
 
 if __name__ == "__main__":
     import pickle
     import AerofolioFino
 
-    tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
-    nome_malha = "Malha/teste 5-1.msh"
-    nome_malha, tag_fis = Malha.malha_retangular("teste 10-1", 0.05, (10,1))
+    # tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
+    # nome_malha = "Malha/teste 5-1.msh"
+    # ##Teste do produto cartesiano
+    # matriz_teste1=np.random.random((42, 6))
+    # matriz_teste2 = np.random.random((42, 6))
+    # prod=produto_cartesiano_nodais(matriz_teste1, matriz_teste2, ordem=2)
+    # for i in range(6):
+    #     for j in range(6):
+    #         if np.any(prod[i,j]!=matriz_teste1[:,i]*matriz_teste2[:,j]):
+    #             print(f"Erro no elemento ({i}, {j}")
+
+    nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", 0.05, (5, 1))
 
     Problema = FEA(nome_malha, tag_fis)
     zero_u = np.zeros(shape=len(Problema.nos), dtype=np.float64)
@@ -1204,22 +1272,23 @@ if __name__ == "__main__":
     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.),
                    # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
                    ]
-    regiao_analitica=lambda x: x[:,0]>9
-    solucao_analitica= lambda x: np.vstack([6*x[:,1]*(1-x[:,1]), np.zeros(len(x))]).T
-    executa=True
+    regiao_analitica = lambda x: np.logical_and(x[:, 0] >= 2, x[:, 0] <4.9)
+    solucao_analitica = lambda x: np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
+    executa = True
     if executa:
-        resultados=Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.05, Re=1, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica)
-        with open(os.path.join("Picles","resultados.pkl"), "wb") as f:
+        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.05, Re=1, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica)
+        with open(os.path.join("Picles", "resultados.pkl"), "wb") as f:
             pickle.dump((Problema, resultados), f)
     else:
-        with open(os.path.join("Picles","resultados.pkl"), "rb") as f:
-            Problema, resultados=pickle.load(f)
+        with open(os.path.join("Picles", "resultados.pkl"), "rb") as f:
+            Problema, resultados = pickle.load(f)
+
 
     def plotar_momento(Problema, resultados, t):
         plt.figure()
         plt.suptitle(f"Velocidade horizontal - ux   t= {t} s")
         plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
-        plt.scatter(Problema.x_nos[:,0], Problema.x_nos[:,1], c=resultados[t]["u"][:,0])
+        plt.scatter(Problema.x_nos[:, 0], Problema.x_nos[:, 1], c=resultados[t]["u"][:, 0])
         plt.colorbar()
         plt.figure()
         plt.suptitle(f"Velocidade vertical - uy   t= {t} s")
@@ -1229,20 +1298,46 @@ if __name__ == "__main__":
         plt.figure()
         plt.suptitle(f"Velocidade horizontal - u*x   t= {t} s")
         plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
-        plt.scatter(Problema.x_nos[:,0], Problema.x_nos[:,1], c=resultados[t]["u*"][:,0])
+        plt.scatter(Problema.x_nos[:, 0], Problema.x_nos[:, 1], c=resultados[t]["u*"][:, 0])
         plt.colorbar()
         plt.figure()
         plt.suptitle(f"Pressao ficticia - p*   t= {t} s")
         plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
-        plt.scatter(Problema.x_nos_o1[:,0], Problema.x_nos_o1[:,1], c=resultados[t]["p*"])
+        plt.scatter(Problema.x_nos_o1[:, 0], Problema.x_nos_o1[:, 1], c=resultados[t]["p*"])
         plt.colorbar()
         plt.figure()
         plt.suptitle(f"Pressao - p   t= {t} s")
         plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
-        plt.scatter(Problema.x_nos_o1[:,0], Problema.x_nos_o1[:,1], c=resultados[t]["p"])
+        plt.scatter(Problema.x_nos_o1[:, 0], Problema.x_nos_o1[:, 1], c=resultados[t]["p"])
         plt.colorbar()
+
+
+    def plotar_perfil(Problema, resultados, t, x=4, eixo=None, ordem=2):
+        r = np.linspace([x, 0, 0], [x, 1, 0], 1001)
+        u = np.array([Problema.interpola(p, resultados[t]["u"], ordem=ordem) for p in r])
+        ux = u[:, 0]
+        uy = u[:, 1]
+        if eixo is None:
+            plt.figure()
+            plt.suptitle(f"Perfil de velocidade horizontal - ux   t= {t},  x={x}")
+        plt.plot(ux, r[:, 1], label=f"ux({x},y)")
+
+
+    def plotar_perfis(Problema, resultados, t):
+        fig, eixo = plt.subplots()
+        for x in np.arange(0, 5.001, 0.5):
+            plotar_perfil(Problema, resultados, t, x, eixo)
+        eixo.legend()
+        return
+
+    t0=time.process_time()
+    plotar_perfis(Problema, resultados, 10)
+    t1=time.process_time()
+    print(f"Perfis plotados em {t1-t0:.4f} s")
+
     # plotar_momento(Problema, resultados, 3)
     plotar_momento(Problema, resultados, 10)
+
     # nome_malha = "Malha/teste.msh"
     # for ordem in (1, 2,):
     #     for n_teste in (1, 2, 3, 4):
