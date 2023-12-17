@@ -1,12 +1,8 @@
 # from mpi4py import MPI
 # from dolfinx import log as dlog
 import time
-import warnings
 import math
 import os
-
-import matplotlib.pyplot as plt
-import numpy as np
 
 import Malha
 
@@ -208,8 +204,11 @@ def calcula_termo_convectivo(produtos, tensor_convectivo, tensor_pertencimento, 
     G=tensor_pertencimento #Gilq=1 se o no i eh o q-esimo no do elemento l
     # p=elementos.shape[1] #numero de nos por elemento, igual a 6 no elementos quadratico
     P=produtos #Pljk eh o produto de uj*uk no elemento l
+    t1=time.process_time()
     F=np.sum(D*P, axis=(2,3)).T #Flq eh a soma de Dqljk*Pljk sobre j e k
-    integral=np.sum((G*F)._numpy(), axis=(1,2)) ##TODO checar se nao da problema fazer isso, ja que G eh um tf.SparseTensor, em vez de um objeto numpy
+    t2=time.process_time()
+    integral=tf.sparse.reduce_sum(G*F, axis=(1,2))._numpy()
+    t3=time.process_time()
     integral[nos_dirichlet]*=0
     return integral
 
@@ -1017,11 +1016,6 @@ class FEA(object):
                             tensores[direcao_derivada][j,l,i,k]=integracao
         return tensores["x"], tensores["y"]
 
-
-
-
-
-
     def matriz_laplaciano_escalar(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1):
         A = self.monta_matriz(self.procedimento_laplaciano, contornos_dirichlet, ordem=ordem)
         return A
@@ -1253,11 +1247,6 @@ class FEA(object):
             t1 = time.process_time()
             ##Calculando u*
             # A matriz de solucao tem formato (2px2p), pois diz respeito apenas a velocidade
-
-
-
-
-
             vetor_un = np.concatenate(((mat_integracao_o2) @ u_n[:, 0], (mat_integracao_o2) @ u_n[:, 1]))
             vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
             if conveccao:
@@ -1273,9 +1262,11 @@ class FEA(object):
                 vdvdy=calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
                 termo_convectivo_y=udvdx+vdvdy
                 vetor_convectivo=np.concatenate((termo_convectivo_x, termo_convectivo_y))
-                u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un / dt - vetor_gradp - vetor_convectivo + vetor_dirich_u)
+                b_u_ast=vetor_un / dt - vetor_gradp - vetor_convectivo + vetor_dirich_u
             else:
-                u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un / dt - vetor_gradp + vetor_dirich_u)
+                b_u_ast = vetor_un / dt - vetor_gradp + vetor_dirich_u
+            u_ast = ssp.linalg.spsolve(A_u_ast,b_u_ast)
+
             u_ast = u_ast.reshape((2, len(self.nos))).T
 
             ##Calculando p*
@@ -1345,7 +1336,7 @@ class FEA(object):
 
 if __name__ == "__main__":
     import pickle
-    import AerofolioFino
+    from RepresentacaoEscoamento import plotar_momento, plotar_perfis
 
     # tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
     # nome_malha = "Malha/teste 5-1.msh"
@@ -1358,12 +1349,12 @@ if __name__ == "__main__":
     #         if np.any(prod[i,j]!=matriz_teste1[:,i]*matriz_teste2[:,j]):
     #             print(f"Erro no elemento ({i}, {j}")
 
-    # nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", 0.05, (5, 1))
-    nome_malha, tag_fis=Malha.malha_quadrada("grosseira", 0.1)
+    nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", 0.05, (5, 1))
+    # cilindro=AerofolioFino.Cilindro(.5,0,1)
+    # nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=100)
+    # nome_malha, tag_fis=Malha.malha_quadrada("grosseira", 0.1)
 
     Problema = FEA(nome_malha, tag_fis)
-    ##Teste da criacao do tensor convectivo
-    zero_u = np.zeros(shape=len(Problema.nos), dtype=np.float64)
     ux_dirichlet = [
         (Problema.nos_cont["esquerda"], lambda x: 1.),
         (Problema.nos_cont["superior"], lambda x: 0.),
@@ -1387,53 +1378,6 @@ if __name__ == "__main__":
     else:
         with open(os.path.join("Picles", "resultados.pkl"), "rb") as f:
             Problema, resultados = pickle.load(f)
-
-
-    def plotar_momento(Problema, resultados, t):
-        plt.figure()
-        plt.suptitle(f"Velocidade horizontal - ux   t= {t} s")
-        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
-        plt.scatter(Problema.x_nos[:, 0], Problema.x_nos[:, 1], c=resultados[t]["u"][:, 0])
-        plt.colorbar()
-        plt.figure()
-        plt.suptitle(f"Velocidade vertical - uy   t= {t} s")
-        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
-        plt.scatter(Problema.x_nos[:, 0], Problema.x_nos[:, 1], c=resultados[t]["u"][:, 1])
-        plt.colorbar()
-        plt.figure()
-        plt.suptitle(f"Velocidade horizontal - u*x   t= {t} s")
-        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
-        plt.scatter(Problema.x_nos[:, 0], Problema.x_nos[:, 1], c=resultados[t]["u*"][:, 0])
-        plt.colorbar()
-        plt.figure()
-        plt.suptitle(f"Pressao ficticia - p*   t= {t} s")
-        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
-        plt.scatter(Problema.x_nos_o1[:, 0], Problema.x_nos_o1[:, 1], c=resultados[t]["p*"])
-        plt.colorbar()
-        plt.figure()
-        plt.suptitle(f"Pressao - p   t= {t} s")
-        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
-        plt.scatter(Problema.x_nos_o1[:, 0], Problema.x_nos_o1[:, 1], c=resultados[t]["p"])
-        plt.colorbar()
-
-
-    def plotar_perfil(Problema, resultados, t, x=4, eixo=None, ordem=2):
-        r = np.linspace([x, 0, 0], [x, 1, 0], 1001)
-        u = np.array([Problema.interpola(p, resultados[t]["u"], ordem=ordem) for p in r])
-        ux = u[:, 0]
-        uy = u[:, 1]
-        if eixo is None:
-            plt.figure()
-            plt.suptitle(f"Perfil de velocidade horizontal - ux   t= {t},  x={x}")
-        plt.plot(ux, r[:, 1], label=f"ux({x},y)")
-
-
-    def plotar_perfis(Problema, resultados, t):
-        fig, eixo = plt.subplots()
-        for x in np.arange(0, 5.001, 0.5):
-            plotar_perfil(Problema, resultados, t, x, eixo)
-        eixo.legend()
-        return
 
     t0=time.process_time()
     plotar_perfis(Problema, resultados, 10)

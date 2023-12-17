@@ -191,6 +191,29 @@ class AerofolioFinoNACA4(AerofolioFino) :
             raise ValueError("n deve ser inteiro e maior ou igual a zero")
         return integral
 
+class Cilindro(AerofolioFino) :
+    def __init__(self, raio, alfa, U0) :
+        self.raio = raio
+        self.volume = np.pi * raio ** 2
+        self.U0 = U0
+        self.alfa = alfa
+        self.nome = f"Cilindro-{raio}-"
+
+    def x_med(self, eta):
+        return eta
+    def y_med(self, eta):
+        return eta*0
+    def x_sup_0(self, x):
+        return x
+    def x_inf_0(self, x):
+        return x
+    def y_sup_0(self, x):
+        return np.sqrt(self.raio**2-(x-1/2)**2)
+    def y_inf_0(self, x):
+        return -np.sqrt(self.raio**2-(x-1/2)**2)
+
+
+
 
 ##TODO implementar classe NACA 5 digitos (mesmo?)
 
