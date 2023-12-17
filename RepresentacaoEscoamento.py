@@ -49,3 +49,6 @@ def plotar_perfis(Problema, resultados, t, lim_x=(0,5)):
         plotar_perfil(Problema, resultados, t, x, eixo)
     eixo.legend()
     return
+
+##TODO tracar linha de corrente a partir da velocidade em cada ponto
+

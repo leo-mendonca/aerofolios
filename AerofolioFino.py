@@ -215,7 +215,6 @@ class Cilindro(AerofolioFino) :
 
 
 
-##TODO implementar classe NACA 5 digitos (mesmo?)
 
 
 def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None) :
