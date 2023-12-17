@@ -174,14 +174,45 @@ def produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2):
     Usado para calcular o termo de conveccao do problema de Navier-Stokes
     Se ux=uy, calcula o produto cartesiano de uma mesma variavel
     :param ux_elementos: np.ndarray n_ex6. array de elementos contendo o valor de ux em cada no de cada elemento
-    :return produtos: np.ndarray 6x6xn_e. array de elementos contendo o produto cartesiano de ux e uy em cada par de nos de cada elemento'''
+    :return produtos: np.ndarray n_ex6x6. array de elementos contendo o produto cartesiano de ux e uy em cada par de nos de cada elemento'''
     if ordem==1: nos=3
     elif ordem==2: nos=6
     else: raise NotImplementedError("Ordem de elementos nao implementada")
     ux_grid=np.stack([ux_elementos.T for _ in range(nos)], axis=1)
     uy_grid=np.stack([uy_elementos.T for _ in range(nos)], axis=0)
     produtos=ux_grid*uy_grid
-    return produtos
+    return np.transpose(produtos, (2,0,1))
+
+def tensor_pertencimento(elementos):
+    '''Produz um tensor esparso G tal que Gilq = 1 se e somente se o no i eh o q-esimo no do elemento l'''
+    posicao=[]
+    valor=[]
+    n_nos=int(np.max(elementos)+1)
+    for l in range(elementos.shape[0]):
+        for q in range(elementos.shape[1]):
+            i=elementos[l,q]
+            posicao.append((i,l,q))
+            valor.append(1)
+
+    tensor=tf.sparse.SparseTensor(posicao, valor, dense_shape=(n_nos, elementos.shape[0], elementos.shape[1]))
+    return tensor
+
+
+
+def calcula_termo_convectivo(produtos, tensor_convectivo, tensor_pertencimento, nos_dirichlet=[]):
+    '''Calcula o vetor correspondente a Ni*uj*duk/dx para todos os valores de i
+    :param u: vetor nx2 contendo os valores nodais de (ux,uy)
+    :param tensor_convectivo: tensor n_ex6x6x6 cujo termo Dlijk da a contribuicao do produto dos nos j e k do elemento l quando a funcao teste eh igual a 1 no no i
+    '''
+    D=tensor_convectivo #Dqljk eh a componente da integral do termo convectivo no elemento l, com o q-esimo no como funcao teste, multiplicado pelo j-esimo e o k-esimo nos do mesmo elemento
+    G=tensor_pertencimento #Gilq=1 se o no i eh o q-esimo no do elemento l
+    # p=elementos.shape[1] #numero de nos por elemento, igual a 6 no elementos quadratico
+    P=produtos #Pljk eh o produto de uj*uk no elemento l
+    F=np.sum(D*P, axis=(2,3)).T #Flq eh a soma de Dqljk*Pljk sobre j e k
+    integral=np.sum((G*F)._numpy(), axis=(1,2)) ##TODO checar se nao da problema fazer isso, ja que G eh um tf.SparseTensor, em vez de um objeto numpy
+    integral[nos_dirichlet]*=0
+    return integral
+
 
 
 
@@ -538,6 +569,9 @@ class FEA(object):
         self.coefs_o2 = self.funcoes_forma(ordem=2)
         self.coefs_o1_alfa = self.funcoes_forma_alfa(ordem=1)
         self.coefs_o2_alfa = self.funcoes_forma_alfa(ordem=2)
+        ##Tensor de pertencimento: indica a que elementos pertence cada no, e em que posicao
+        self.pertencimento=tensor_pertencimento(self.elementos)
+        self.pertencimento_o1 = tensor_pertencimento(self.elementos_o1)
         ##Fatores que auxiliam na integracao de qualquer expressao que possa ser escrita como rho1+ rho2*alfa + rho3*beta + rho4*alfa² ...
         self.fatores_integracao = np.array([[math.factorial(k) * math.factorial(n) / math.factorial(k + n + 2) for k in range(7)] for n in range(7)])
         self.fatores_rho = np.array([
@@ -923,7 +957,6 @@ class FEA(object):
                     elif ordem_tentativa == 2:
                         ind_j = j
                     valor = procedimento(l, pos_i, pos_j, x, y, ordem_teste, ordem_tentativa)
-                    ##TODO reescrever os procedimentos para permitir ordens cruzadas
                     linhas.append(ind_i)
                     colunas.append(ind_j)
                     valores.append(valor)
@@ -933,6 +966,7 @@ class FEA(object):
 
     def monta_tensor_convectivo(self, ordem=2):
         '''Monta o tensor correspondente a integral do termo de conveccao Ni*Nj*dNk/dx'''
+        ##TODO lidar com condicoes de dirichlet
         if ordem==2:
             p=6
             elementos=self.elementos
@@ -941,7 +975,7 @@ class FEA(object):
         calc_qrs={"x":lambda a,b,c,d,e,f, x, y: (b,2*d*x[1]+f*y[1], 2*d*x[2]+f*y[2]),
                   "y": lambda a,b,c,d,e,f, x, y: (c,2*e*y[1]+f*x[1], 2*e*y[2]+f*x[2])}
         n_elem=len(self.elementos)
-        tensores= {"x":np.zeros((n_elem, p, p, p)), "y":np.zeros((n_elem, p, p, p))}
+        tensores= {"x":np.zeros(( p,n_elem, p, p)), "y":np.zeros(( p,n_elem, p, p))}
         #O tensor sera simetrico entre i e j, logo nao eh necessario fazer o loop para j>i
         x_elem=self.x_nos[elementos]
         for l in range(n_elem):
@@ -979,8 +1013,8 @@ class FEA(object):
                                 ei * ej * r + ei * fj * s + ej * fi * s, #alfa*beta⁴
                             ])
                             integracao=det*(rho*self.fatores_rho[:len(rho)]).sum(axis=0)
-                            tensores[direcao_derivada][l,i,j,k]=integracao
-                            tensores[direcao_derivada][l,j,i,k]=integracao
+                            tensores[direcao_derivada][i,l,j,k]=integracao
+                            tensores[direcao_derivada][j,l,i,k]=integracao
         return tensores["x"], tensores["y"]
 
 
@@ -994,7 +1028,7 @@ class FEA(object):
 
     def integrar_expressao(self, expressao, elemento, n):
         '''Integra numericamente uma expressao em um determinado elemento usando quadratura gaussiana'''
-        # TODO implementar para elementos de ordem qualquer
+        # TODO implementar para elementos de ordem qualquer e com quadratura gaussiana de verdade
         # func_x=lambda alfa, beta: (1-alfa-beta)*self.x_nos[elemento,0,0]+alfa*self.x_nos[elemento,1,0]+beta*self.x_nos[elemento,2,0]
         # func_y=lambda alfa, beta: (1-alfa-beta)*self.x_nos[elemento,0,1]+alfa*self.x_nos[elemento,1,1]+beta*self.x_nos[elemento,2,1]
         # func_alfa=lambda ksi, eta: (1+ksi)/2
@@ -1193,11 +1227,15 @@ class FEA(object):
         matriz_bloco1 = mat_integracao_o2 / dt - mat_lap_o2 / Re
         A_dirich_ux, b_dirich_ux = self.monta_matriz_dirichlet(ux_dirichlet, ordem=2)
         A_dirich_uy, b_dirich_uy = self.monta_matriz_dirichlet(uy_dirichlet, ordem=2)
+        nos_dirich_ux=np.concatenate([cont for (cont, funcao) in ux_dirichlet])
+        nos_dirich_uy=np.concatenate([cont for (cont, funcao) in uy_dirichlet])
         A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
         ##p_ast
         A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
         b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
+        if conveccao:
+            D_x, D_y=self.monta_tensor_convectivo(ordem=2) ##tensore relevantes para o termo convectivo derivado em x e y, respectivamente
 
         A_p = mat_lap_o1 + A_dirich_p
         ##u
@@ -1215,17 +1253,29 @@ class FEA(object):
             t1 = time.process_time()
             ##Calculando u*
             # A matriz de solucao tem formato (2px2p), pois diz respeito apenas a velocidade
-            if conveccao:
-                ux_elementos=u_n[:,0][self.elementos]
-                uy_elementos=u_n[:,1][self.elementos]
-                produtos_uxuy= produto_cartesiano_nodais(ux_elementos,uy_elementos, ordem=2) #um tensor 6x6xn_e, onde n_e eh o numero de elementos
-                produtos_uxux= produto_cartesiano_nodais(ux_elementos,ux_elementos, ordem=2)
-                produtos_uyuy= produto_cartesiano_nodais(uy_elementos,uy_elementos, ordem=2)
+
+
+
 
 
             vetor_un = np.concatenate(((mat_integracao_o2) @ u_n[:, 0], (mat_integracao_o2) @ u_n[:, 1]))
             vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
-            u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un / dt - vetor_gradp + vetor_dirich_u)
+            if conveccao:
+                ux_elementos=u_n[:,0][self.elementos]
+                uy_elementos=u_n[:,1][self.elementos]
+                produtos_uxuy = produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2)
+                produtos_uxux = produto_cartesiano_nodais(ux_elementos, ux_elementos, ordem=2)
+                produtos_uyuy = produto_cartesiano_nodais(uy_elementos, uy_elementos, ordem=2)
+                ududx=calcula_termo_convectivo(produtos_uxux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_ux)
+                vdudy=calcula_termo_convectivo(produtos_uxuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_ux)
+                termo_convectivo_x=ududx+vdudy
+                udvdx=calcula_termo_convectivo(produtos_uxuy, D_x, self.pertencimento, nos_dirichlet=nos_dirich_uy)
+                vdvdy=calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
+                termo_convectivo_y=udvdx+vdvdy
+                vetor_convectivo=np.concatenate((termo_convectivo_x, termo_convectivo_y))
+                u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un / dt - vetor_gradp - vetor_convectivo + vetor_dirich_u)
+            else:
+                u_ast = ssp.linalg.spsolve(A_u_ast, vetor_un / dt - vetor_gradp + vetor_dirich_u)
             u_ast = u_ast.reshape((2, len(self.nos))).T
 
             ##Calculando p*
@@ -1313,7 +1363,6 @@ if __name__ == "__main__":
 
     Problema = FEA(nome_malha, tag_fis)
     ##Teste da criacao do tensor convectivo
-    Dx, Dy=Problema.monta_tensor_convectivo(ordem=2)
     zero_u = np.zeros(shape=len(Problema.nos), dtype=np.float64)
     ux_dirichlet = [
         (Problema.nos_cont["esquerda"], lambda x: 1.),
@@ -1332,8 +1381,8 @@ if __name__ == "__main__":
     solucao_analitica = lambda x: np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
     executa = True
     if executa:
-        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.05, Re=1, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica)
-        with open(os.path.join("Picles", "resultados.pkl"), "wb") as f:
+        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.05, Re=1, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, conveccao=True)
+        with open(os.path.join("Picles", "resultados Navier-Stokes.pkl"), "wb") as f:
             pickle.dump((Problema, resultados), f)
     else:
         with open(os.path.join("Picles", "resultados.pkl"), "rb") as f:

@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import scipy.sparse as ssp
 import scipy.sparse.linalg
+import tensorflow as tf
 # matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
