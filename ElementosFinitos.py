@@ -217,8 +217,9 @@ class FEA(object):
                 velocidade = aerofolio.U0
         self.velocidade = velocidade
         self.aerofolio = aerofolio
-        self.nos, self.x_nos, self.elementos, self.nos_cont, self.x_cont = Malha.ler_malha(nome_malha, tag_fis)
+        self.nos, self.x_nos, self.elementos, self.arestas, self.nos_cont, self.x_cont, self.arestas_cont = Malha.ler_malha(nome_malha, tag_fis)
         self.nos_o1, self.elementos_o1 = Malha.reduz_ordem(self.elementos)
+        self.arestas_o1=self.arestas[:,(0,2)] #inclui apenas os nos inicial e final da aresta
         self.x_nos_o1 = self.x_nos[self.nos_o1]
         self.nos_cont_o1 = {chave: np.intersect1d(self.nos_o1, self.nos_cont[chave]) for chave in self.nos_cont.keys()}
         self.nos_faces = np.setdiff1d(self.nos, self.nos_o1)

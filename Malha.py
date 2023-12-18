@@ -132,26 +132,27 @@ def ler_malha(nome_malha, tag_fis) :
     nos_elem -= 1  # ajustando os indices para comecar em 0
     nos_por_elem = len(nos_elem) // len(i_elem)  # numero de nos por elemento. 6 se forem elementos de ordem 2; 3 se forem de ordem 1
     nos_elem = nos_elem.reshape((len(i_elem), nos_por_elem))  # o vetor de nos por elemento eh dado de forma sequencial, por isso o reshape
+    arestas=np.vstack([nos_elem[:,(0,3,1)] , nos_elem[:,(1,4,2)], nos_elem[:,(2,5,0)]]) #inclui os nos do inicio, meio e fim de cada aresta
+
 
     # i_linha, [nos_linha] = gmsh.model.mesh.get_elements(1)[1:] #indice e indice dos nos de cada segmento de reta do contorno
     nos_contorno = {}
     x_contorno = {}
+    arestas_contorno = {}
     chaves=list(tag_fis.keys())
     for chave in chaves :
         nos_contorno[chave], x_contorno[chave] = gmsh.model.mesh.get_nodes_for_physical_group(1, tag_fis[chave])
         nos_contorno[chave] -= 1
+        arestas_contorno[chave] = arestas_no_grupo(nos_contorno[chave],arestas)
+
     chaves_inv=chaves[::-1] #inverte a ordem das chaves para que o contorno de entrada seja o ultimo
     ##Remover os nos duplicados em mais de um coinjunto de contorno
     for i in range(len(chaves)):
         for j in range(i+1, len(chaves)):
             nos_contorno[chaves_inv[i]]=np.setdiff1d(nos_contorno[chaves_inv[i]], nos_contorno[chaves_inv[j]])
-    ##TODO identificar as arestas que compoem o contorno
-
-
-
 
     gmsh.finalize()
-    return nos, x_nos, nos_elem, nos_contorno, x_contorno
+    return nos, x_nos, nos_elem, arestas, nos_contorno, x_contorno, arestas_contorno
 
 
 def reduz_ordem(nos_elem) :
@@ -163,6 +164,13 @@ def reduz_ordem(nos_elem) :
 
     return nos_ordem_1, nos_elem_ordem_1
 
+def arestas_no_grupo(nos_grupo, arestas):
+    '''Recebe um vetor de nos pertencentes a um dado grupoo e um vetor de arestas, e determina quaiss arestas pertencem ao grupo'''
+    arestas_grupo=[]
+    for aresta in arestas:
+        if all(np.isin(aresta, nos_grupo)):
+            arestas_grupo.append(aresta)
+    return np.array(arestas_grupo)
 
 def desenha_aerofolio(pontos_sup, pontos_inf) :
     eixo = plt.axes()
