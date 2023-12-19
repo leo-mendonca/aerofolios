@@ -220,6 +220,7 @@ class FEA(object):
         self.nos, self.x_nos, self.elementos, self.arestas, self.nos_cont, self.x_cont, self.arestas_cont = Malha.ler_malha(nome_malha, tag_fis)
         self.nos_o1, self.elementos_o1 = Malha.reduz_ordem(self.elementos)
         self.arestas_o1=self.arestas[:,(0,2)] #inclui apenas os nos inicial e final da aresta
+        self.arestas_cont_o1={chave:self.arestas_cont[chave][:,(0,2)] for chave in self.arestas_cont.keys()}
         self.x_nos_o1 = self.x_nos[self.nos_o1]
         self.nos_cont_o1 = {chave: np.intersect1d(self.nos_o1, self.nos_cont[chave]) for chave in self.nos_cont.keys()}
         self.nos_faces = np.setdiff1d(self.nos, self.nos_o1)
@@ -257,6 +258,13 @@ class FEA(object):
             self.fatores_integracao[1, 4],
 
         ])
+        ##Definindo a relacao entre a numeracao dos nos de ordem 1 e 2
+        nose=self.nos.copy()
+        nose[~np.in1d(nose,self.nos_o1)]=-1
+        uni, inv = np.unique(nose, return_inverse=True)
+        self.mascara_nos_o1=inv
+
+
 
     def matriz_laplaciano_escalar2(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1, verbose=False, gauss=False):
         '''Monta a matriz A do sistema linear correspondente a uma equacao de Laplace nabla^2(p)=0, com p escalar
@@ -706,19 +714,19 @@ class FEA(object):
             coefs_b = np.zeros(shape=elementos.shape, dtype=np.float64)
             coefs_c = np.zeros(shape=elementos.shape, dtype=np.float64)
             dets = np.zeros(len(elementos), dtype=np.float64)
-            for n in range(len(elementos)):
-                x_abs, y_abs, z_abs = self.x_nos[elementos[n]].T  # coordenadas absolutas dos nos do elemento n
+            for l in range(len(elementos)):
+                x_abs, y_abs, z_abs = self.x_nos[elementos[l]].T  # coordenadas absolutas dos nos do elemento n
                 x = x_abs - x_abs[0]  # shiftando as coordenadas para serem relativas ao primeiro no, de modo a reduzir erros numericos
                 y = y_abs - y_abs[0]
                 matriz = np.array([[1., x[0], y[0]], [1., x[1], y[1]], [1., x[2], y[2]]])
                 det_A = np.linalg.det(matriz)
-                dets[n] = det_A
+                dets[l] = det_A
                 for i in range(3):
                     j = (i + 1) % 3
                     k = (i + 2) % 3
-                    coefs_a[n, i] = (x[j] * y[k] - x[k] * y[j]) / det_A
-                    coefs_b[n, i] = (y[j] - y[k]) / det_A
-                    coefs_c[n, i] = (x[k] - x[j]) / det_A
+                    coefs_a[l, i] = (x[j] * y[k] - x[k] * y[j]) / det_A
+                    coefs_b[l, i] = (y[j] - y[k]) / det_A
+                    coefs_c[l, i] = (x[k] - x[j]) / det_A
             return coefs_a, coefs_b, coefs_c, dets
         elif ordem == 2:
             elementos = self.elementos
@@ -726,14 +734,14 @@ class FEA(object):
             coefs = np.zeros(shape=(len(elementos), 6, 6), dtype=np.float64)  # array N x 6 x 6 contendo todos os coeficientes da funcao N em cada no em cada elemento
             ##A funcao de forma eh da forma N(x,y)= a + bx + cy + dx² + ey² + fxy
             ##A matriz de coeficientes eh da forma [a, b, c, d, e, f]
-            for n in range(len(elementos)):
-                x_abs, y_abs, z_abs = self.x_nos[elementos[n]].T
+            for l in range(len(elementos)):
+                x_abs, y_abs, z_abs = self.x_nos[elementos[l]].T
                 x = x_abs - x_abs[0]  # shiftando as coordenadas para serem relativas ao primeiro no, de modo a reduzir erros numericos
                 y = y_abs - y_abs[0]
                 matriz = np.vstack((np.ones(6), x, y, x ** 2, y ** 2, x * y)).T
                 for i in range(6):
                     b = np.identity(6)[i]
-                    coefs[n, i] = np.linalg.solve(matriz, b)
+                    coefs[l, i] = np.linalg.solve(matriz, b)
             return coefs
         else:
             raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
@@ -999,6 +1007,62 @@ class FEA(object):
         nos = elementos[elemento]
         soma = sum([self.N(no, elemento, x, ordem=ordem) * u[no] for no in nos])
         return soma
+
+    def calcula_forcas(self, p, u, contorno="af", mu=1., debug=True):
+        arestas=self.arestas_cont_o1[contorno]
+        forcas=np.zeros((len(arestas),2))
+        posicoes=np.zeros((len(arestas),2))
+        for i in range(len(arestas)):
+            a=arestas[i]
+            ##Encontrando o elemento a que pertence a aresta
+
+            l=np.intersect1d(np.where(self.elementos_o1==a[0])[0], np.where(self.elementos_o1==a[1])[0])[0]
+            coeficientes_o2=self.coefs_o2[l] ##matriz de coeficientes da funcao de forma de cada no
+            coeficientes_o1=self.coefs_o1[l]
+            ##Definindo os campos de velocidade e pressao no elemento
+            u_local=u[self.elementos[l]] ##vetor de velocidades do elemento
+            p_local=p[self.mascara_nos_o1[self.elementos_o1[l]]] ##vetor de pressoes do elemento
+            aux,bux,cux,dux,eux,fux=(u_local[:,0]*coeficientes_o2.T).sum(axis=0) ##coeficientes (a,b,c...) da funcao de forma ponderada pela velocidade em cada no
+            auy, buy, cuy, duy, euy, fuy = (u_local[:, 1] * coeficientes_o2.T).sum(axis=0)
+            ap,bp,cp=(p_local*coeficientes_o1.T).sum(axis=0) ##coeficientes (a,b,c...) da funcao de forma ponderada pela pressao em cada no
+
+            ##definindo a geometria
+            (x0,y0), (x1,y1)=self.x_nos[a,:2]-self.x_nos[self.elementos[l,0],:2] #posicao de inicio e fim da aresta, relativo ao primeiro ponto do elemento
+            comprimento=np.linalg.norm([x1-x0, y1-y0]) ##comprimento da aresta
+            ponto_medio_rel=np.array([x0+x1,y0+y1])/2 ##posicao media da aresta
+            normal=np.array([y1-y0, -(x1-x0)]) ##vetor normal a aresta
+            normal=normal/np.linalg.norm(normal) ##normalizando o vetor normal
+            terceiro_no=np.setdiff1d(self.elementos[l], a)[0] ##no que nao pertence a aresta
+            normal*=np.sign((self.x_nos[terceiro_no,:2]-ponto_medio_rel)@normal) ##garantindo que a normal aponta para fora do objeto, ou seja, para dentro do ecoamento
+            if not debug:
+                ##calculo dos coeficientes da funcao linear que representa cada componente da tensao
+                coeficientes_sigma=np.zeros((2,2,3), dtype=np.float64) #em cada entrada, temos o vetor de coeficientes (a,b,c) daquela componente de tensao
+                coeficientes_sigma[0,0]=(2*bux*mu- ap, 4*dux*mu-bp, 2*fux*mu-cp)
+                coeficientes_sigma[0,1]=(2*(buy+cux)*mu, (4*duy+2*fux)*mu, (4*euy+2*fuy)*mu)
+                coeficientes_sigma[1,0]=coeficientes_sigma[0,1] # A tensao eh simetrica
+                coeficientes_sigma[1,1] = (2*cuy*mu-ap, 2*fuy*mu-bp, 4*euy*mu-cp)
+                a_sigma,b_sigma,c_sigma=coeficientes_sigma.transpose((2,0,1))
+                integral_sigma=a_sigma+b_sigma*x0+c_sigma*y0+(b_sigma*(x1-x0)+c_sigma*(y1-y0))/2
+            elif debug:
+                ##Calcula somente a tensao no ponto medio da aresta
+                sigma=np.zeros((2,2),dtype=np.float64)
+                x,y=ponto_medio_rel
+                # sigma[0,0]=2*mu*(bux+2*dux*x+fux*y)-(ap+bp*x+cp*y)
+                # sigma[0,1]=mu*(2*buy+2*cux+4*duy*x+4*eux*y+2*fux*x+2*fuy*y)
+                # sigma[1,0]=sigma[0,1]
+                # sigma[1,1]=2*mu*(cuy+2*euy*y+fuy*x)-(ap+bp*x+cp*y)
+                sigma[0,0]=-(ap+bp*x+cp*y)
+                sigma[1,1]=-(ap+bp*x+cp*y)
+                integral_sigma=sigma
+
+            forca=integral_sigma@normal * comprimento
+            forcas[i]=forca
+            posicoes[i]=ponto_medio_rel+self.x_nos[self.elementos[l,0],:2]
+        return forcas, posicoes
+
+
+
+
 
 
 if __name__ == "__main__":

@@ -139,8 +139,9 @@ def ler_malha(nome_malha, tag_fis) :
     nos_contorno = {}
     x_contorno = {}
     arestas_contorno = {}
-    chaves=list(tag_fis.keys())
+    chaves=[chave for chave in tag_fis.keys() if chave!="escoamento"] #lista com as chaves dos contornos (excluindo o interior do escoamento)
     for chave in chaves :
+        # if chave !="escoamento" : # O interior do escoamento nao faz parte do contorno, nao deve ser contabilizado aqui
         nos_contorno[chave], x_contorno[chave] = gmsh.model.mesh.get_nodes_for_physical_group(1, tag_fis[chave])
         nos_contorno[chave] -= 1
         arestas_contorno[chave] = arestas_no_grupo(nos_contorno[chave],arestas)
