@@ -2,7 +2,8 @@ import os
 from Definicoes import gmsh, np, plt
 
 geo = gmsh.model.geo  # definindo um alias para o modulo de geometria do gmsh
-n_pontos_contorno_padrao = 1000
+n_pontos_contorno_padrao = 100
+tamanho_padrao = 0.1
 
 
 def malha_quadrada(nome_modelo, tamanho, ordem=2) :
@@ -43,13 +44,13 @@ def malha_retangular(nome_modelo, tamanho, formato, ordem=2) :
     return nome_arquivo, tag_fis
 
 
-def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao, ordem=2) :
+def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao, ordem=2, tamanho=tamanho_padrao) :
     '''Gera uma malha no gmsh correspondendo a regiao em torno do aerofolio'''
     contornos = {"esquerda" : 1, "direita" : 2, "superior" : 3, "inferior" : 4, }
     # n_pontos_contorno = 1000
     tag_fis = {}  # tags dos grupos fisicos
-    af_tamanho = 1 / n_pontos_contorno
-    tamanho = 10 * af_tamanho
+    # af_tamanho = 1 / n_pontos_contorno
+    # tamanho = 10 * af_tamanho
     ##Inicializando o gmsh
     gmsh.initialize()
     gmsh.model.add(nome_modelo)  # adiciona um modelo
@@ -64,8 +65,8 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     geo.add_line(2, 4, tag=contornos["superior"])
 
     ###versao a vera com aerofolio
-    ponto_inicial = geo.add_point(aerofolio.x_med(0), aerofolio.y_med(0), 0, af_tamanho)
-    ponto_final = geo.add_point(aerofolio.x_med(1), aerofolio.y_med(1), 0, af_tamanho)
+    ponto_inicial = geo.add_point(aerofolio.x_med(0), aerofolio.y_med(0), 0, tamanho)
+    ponto_final = geo.add_point(aerofolio.x_med(1), aerofolio.y_med(1), 0, tamanho)
     pontos_sup = [ponto_inicial, ]
     pontos_inf = [ponto_inicial, ]
     af_sup = []
@@ -73,8 +74,8 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     for i in range(1, n_pontos_contorno) :
         ##eta eh igual ao x da linha base do aerofolio
         eta = i / n_pontos_contorno
-        pontos_sup.append(geo.add_point(aerofolio.x_sup(eta), aerofolio.y_sup(eta), 0, af_tamanho))
-        pontos_inf.append(geo.add_point(aerofolio.x_inf(eta), aerofolio.y_inf(eta), 0, af_tamanho))
+        pontos_sup.append(geo.add_point(aerofolio.x_sup(eta), aerofolio.y_sup(eta), 0, tamanho))
+        pontos_inf.append(geo.add_point(aerofolio.x_inf(eta), aerofolio.y_inf(eta), 0, tamanho))
     pontos_sup.append(ponto_final) ##O ponto final eh o mesmo para as duas linhas
     pontos_inf.append(ponto_final)
     for i in range(n_pontos_contorno) :

@@ -193,24 +193,27 @@ class AerofolioFinoNACA4(AerofolioFino) :
 
 class Cilindro(AerofolioFino) :
     def __init__(self, raio, alfa, U0) :
+
         self.raio = raio
         self.volume = np.pi * raio ** 2
         self.U0 = U0
         self.alfa = alfa
         self.nome = f"Cilindro-{raio}-"
 
+    ##Nessa classe, eta representa o angulo em torno do cilindro, e nao a coordenada x
     def x_med(self, eta):
-        return eta
+        return 1/2-1/2*np.cos(eta*np.pi)
     def y_med(self, eta):
         return eta*0
-    def x_sup_0(self, x):
-        return x
-    def x_inf_0(self, x):
-        return x
-    def y_sup_0(self, x):
-        return np.sqrt(self.raio**2-(x-1/2)**2)
-    def y_inf_0(self, x):
-        return -np.sqrt(self.raio**2-(x-1/2)**2)
+    def x_sup_0(self, eta):
+        return 1/2-1/2*np.cos(eta*np.pi)
+    def x_inf_0(self, eta):
+        return 1/2-1/2*np.cos(eta*np.pi)
+    def y_sup_0(self, eta):
+        return 1/2*np.sin(eta*np.pi)
+
+    def y_inf_0(self, eta):
+        return -1/2*np.sin(eta*np.pi)
 
 
 

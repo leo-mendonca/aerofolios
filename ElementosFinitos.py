@@ -1013,6 +1013,7 @@ class FEA(object):
         arestas=self.arestas_cont_o1[contorno]
         forcas=np.zeros((len(arestas),2))
         posicoes=np.zeros((len(arestas),2))
+        tensoes=np.zeros((len(arestas),2))
         for i in range(len(arestas)):
             a=arestas[i]
             ##Encontrando o elemento a que pertence a aresta
@@ -1056,10 +1057,12 @@ class FEA(object):
                 sigma[1,1]=-(ap+bp*x+cp*y)
                 integral_sigma=sigma
 
-            forca=integral_sigma@normal * comprimento
+            tensao=integral_sigma@normal
+            forca=tensao*comprimento
             forcas[i]=forca
             posicoes[i]=ponto_medio_rel+self.x_nos[self.elementos[l,0],:2]
-        return forcas, posicoes
+            tensoes[i]=tensao
+        return forcas, posicoes, tensoes
 
 
 
