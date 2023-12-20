@@ -1,9 +1,11 @@
 import numpy as np
-
 import AerofolioFino
 import Malha
 import ElementosFinitos
 import RepresentacaoEscoamento
+import time
+import os
+import pickle
 from Definicoes import *
 
 def teste_cilindro(n=50):
@@ -11,18 +13,18 @@ def teste_cilindro(n=50):
     nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n)
     Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
     ux_dirichlet = [
-        (Problema.nos_cont["entrada"], lambda x: 1.),
+        (Problema.nos_cont["esquerda"], lambda x: 1.),
         (Problema.nos_cont["superior"], lambda x: 0.),
         (Problema.nos_cont["inferior"], lambda x: 0.),
         (Problema.nos_cont["af"], lambda x: 0.),
     ]
     uy_dirichlet = [
-        (Problema.nos_cont["entrada"], lambda x: 0.),
+        (Problema.nos_cont["esquerda"], lambda x: 0.),
         (Problema.nos_cont["superior"], lambda x: 0.),
         (Problema.nos_cont["inferior"], lambda x: 0.),
         (Problema.nos_cont["af"], lambda x: 0.),
     ]
-    p_dirichlet = [(Problema.nos_cont_o1["saida"], lambda x: 0.),]
+    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.),]
     resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True)
     RepresentacaoEscoamento.plotar_momento(Problema, resultados, 10)
     # RepresentacaoEscoamento.plotar_perfis(Problema, resultados, 10, lim_x=(-2,0))
@@ -45,18 +47,18 @@ def teste_forca(n=20, debug=False):
     nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n)
     Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
     ux_dirichlet = [
-        (Problema.nos_cont["entrada"], lambda x: 1.),
+        (Problema.nos_cont["esquerda"], lambda x: 1.),
         (Problema.nos_cont["superior"], lambda x: 0.),
         (Problema.nos_cont["inferior"], lambda x: 0.),
         (Problema.nos_cont["af"], lambda x: 0.),
     ]
     uy_dirichlet = [
-        (Problema.nos_cont["entrada"], lambda x: 0.),
+        (Problema.nos_cont["esquerda"], lambda x: 0.),
         (Problema.nos_cont["superior"], lambda x: 0.),
         (Problema.nos_cont["inferior"], lambda x: 0.),
         (Problema.nos_cont["af"], lambda x: 0.),
     ]
-    p_dirichlet = [(Problema.nos_cont_o1["saida"], lambda x: 50.),]
+    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 50.),]
     resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True)
     u=resultados[10]["u"]
     p=resultados[10]["p"]
@@ -74,12 +76,46 @@ def teste_forca(n=20, debug=False):
     plt.plot(.5+0.5*np.cos(theta),0.5*np.sin(theta),'b-', alpha=0.3, linewidth=2)
     for i in range(len(x)):
         plt.plot([x[i,0],x[i,0]+vetor_F[i,0]],[x[i,1],x[i,1]+vetor_F[i,1]],'k-')
-
-
     return forca,x
+
+def teste_poiseuille(tamanho=0.1, p0=100, conveccao=True):
+    nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", tamanho, (5, 1))
+    Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
+    ux_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x : 1.),
+        (Problema.nos_cont["superior"], lambda x : 0.),
+        (Problema.nos_cont["inferior"], lambda x : 0.),
+    ]
+    uy_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x : 0.),
+        (Problema.nos_cont["superior"], lambda x : 0.),
+        (Problema.nos_cont["inferior"], lambda x : 0.),
+    ]
+    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x : p0),
+                   # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
+                   ]
+    regiao_analitica = lambda x : np.logical_and(x[:, 0] >= 2, x[:, 0] < 4.9)
+    solucao_analitica = lambda x : np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
+    executa = True
+    if executa :
+        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.05, Re=1, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, conveccao=conveccao)
+        with open(os.path.join("Picles", "resultados Navier-Stokes.pkl"), "wb") as f :
+            pickle.dump((Problema, resultados), f)
+    else :
+        with open(os.path.join("Picles", "resultados.pkl"), "rb") as f :
+            Problema, resultados = pickle.load(f)
+
+    t0 = time.process_time()
+    RepresentacaoEscoamento.plotar_perfis(Problema, resultados, 10)
+    t1 = time.process_time()
+    print(f"Perfis plotados em {t1 - t0:.4f} s")
+
+    # plotar_momento(Problema, resultados, 3)
+    RepresentacaoEscoamento.plotar_momento(Problema, resultados, 10)
+    plt.show(block=False)
 
 
 if __name__ == "__main__":
-
     teste_forca(n=40, debug=True)
+    teste_poiseuille(tamanho=0.2, p0=-100, conveccao=False)
     plt.show()

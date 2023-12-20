@@ -45,7 +45,7 @@ def malha_retangular(nome_modelo, tamanho, formato, ordem=2) :
 
 def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao, ordem=2) :
     '''Gera uma malha no gmsh correspondendo a regiao em torno do aerofolio'''
-    contornos = {"entrada" : 1, "saida" : 2, "superior" : 3, "inferior" : 4, }
+    contornos = {"esquerda" : 1, "direita" : 2, "superior" : 3, "inferior" : 4, }
     # n_pontos_contorno = 1000
     tag_fis = {}  # tags dos grupos fisicos
     af_tamanho = 1 / n_pontos_contorno
@@ -58,8 +58,8 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     geo.addPoint(-2, 1, 0, tamanho, tag=2)  # ponto superior esquerdo
     geo.addPoint(3, -1, 0, tamanho, tag=3)  # ponto inferior direito
     geo.addPoint(3, 1, 0, tamanho, tag=4)  # ponto superior direito
-    geo.add_line(1, 2, tag=contornos["entrada"])
-    geo.add_line(3, 4, tag=contornos["saida"])
+    geo.add_line(1, 2, tag=contornos["esquerda"])
+    geo.add_line(3, 4, tag=contornos["direita"])
     geo.add_line(1, 3, tag=contornos["inferior"])
     geo.add_line(2, 4, tag=contornos["superior"])
 
@@ -91,8 +91,8 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
 
     ##Criando grupos fisicos correspondendo a cada elemento da simulacao
     tag_fis["af"] = geo.add_physical_group(1, af_sup + af_inf)
-    tag_fis["entrada"] = geo.add_physical_group(1, [contornos["entrada"]])
-    tag_fis["saida"] = geo.add_physical_group(1, [contornos["saida"]])
+    tag_fis["esquerda"] = geo.add_physical_group(1, [contornos["esquerda"]])
+    tag_fis["direita"] = geo.add_physical_group(1, [contornos["direita"]])
     tag_fis["superior"] = geo.add_physical_group(1, [contornos["superior"]])
     tag_fis["inferior"] = geo.add_physical_group(1, [contornos["inferior"]])
     tag_fis["escoamento"] = geo.add_physical_group(2, [1])  # grupo fisico 2d correspondendo a todo o escoamento
@@ -114,7 +114,7 @@ def ler_malha(nome_malha, tag_fis) :
     Eh sempre importante lembrar que o gmsh comeca seus indices em 1, em vez de 0. Por isso, eh necessario subtrair 1 de todos os indices recebidos pelo gmsh.
     Na saida dessa funcao, isso ja foi feito para todos os casos
     :param nome_malha: str. Nome do arquivo .msh gerado pelo gmsh
-    :param tag_fis: dict. Dicionario contendo o numero de cada grupo fisico definido no gmsh (e.g. "entrada", "saida", "af", etc)
+    :param tag_fis: dict. Dicionario contendo o numero de cada grupo fisico definido no gmsh (e.g. "esquerda", "direita", "af", etc)
     :return
     nos: vetor com as coordenadas de cada no da malha
     x_nos: vetor com as coordenadas de cada no da malha, em forma de matriz (cada linha eh um no)

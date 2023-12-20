@@ -515,6 +515,7 @@ class FEA(object):
         if ordem == 1:
             elementos = self.elementos_o1
             nos = self.nos_o1
+
         elif ordem == 2:
             elementos = self.elementos
             nos = self.nos
@@ -875,7 +876,7 @@ class FEA(object):
                 u_n[no, 1] = funcao(self.x_nos[no])
         for (cont, funcao) in p_dirichlet:
             for no in cont:
-                p_n[no] = funcao(self.x_nos[no])
+                p_n[self.mascara_nos_o1[no]] = funcao(self.x_nos[no])
 
         print(u"Montando as matrizes a serem usados pelo Método de Elementos Finitos")
         t1 = time.process_time()
@@ -900,7 +901,7 @@ class FEA(object):
         b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
         if conveccao:
-            D_x, D_y=self.monta_tensor_convectivo(ordem=2) ##tensore relevantes para o termo convectivo derivado em x e y, respectivamente
+            D_x, D_y=self.monta_tensor_convectivo(ordem=2) ##tensores relevantes para o termo convectivo derivado em x e y, respectivamente
 
         A_p = mat_lap_o1 + A_dirich_p
         ##u
@@ -961,7 +962,7 @@ class FEA(object):
                     pontos_an = self.nos[regiao_analitica(self.x_nos)]  # separa apenas os nos selecionados para avaliar a solucao analitica
                 else:
                     pontos_an = self.nos
-                u_an = solucao_analitica(Problema.x_nos[pontos_an])
+                u_an = solucao_analitica(self.x_nos[pontos_an])
                 erro = u[pontos_an] - u_an
                 print(f"Erro maximo: {np.max(np.abs(erro), axis=0)}")
                 print(f"Erro RMS: {np.sqrt(np.average(erro ** 2, axis=0))}")
@@ -1080,43 +1081,7 @@ if __name__ == "__main__":
     #         if np.any(prod[i,j]!=matriz_teste1[:,i]*matriz_teste2[:,j]):
     #             print(f"Erro no elemento ({i}, {j}")
 
-    nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", 0.05, (5, 1))
-    # cilindro=AerofolioFino.Cilindro(.5,0,1)
-    # nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=100)
-    # nome_malha, tag_fis=Malha.malha_quadrada("grosseira", 0.1)
 
-    Problema = FEA(nome_malha, tag_fis)
-    ux_dirichlet = [
-        (Problema.nos_cont["esquerda"], lambda x: 1.),
-        (Problema.nos_cont["superior"], lambda x: 0.),
-        (Problema.nos_cont["inferior"], lambda x: 0.),
-    ]
-    uy_dirichlet = [
-        (Problema.nos_cont["esquerda"], lambda x: 0.),
-        (Problema.nos_cont["superior"], lambda x: 0.),
-        (Problema.nos_cont["inferior"], lambda x: 0.),
-    ]
-    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.),
-                   # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
-                   ]
-    regiao_analitica = lambda x: np.logical_and(x[:, 0] >= 2, x[:, 0] <4.9)
-    solucao_analitica = lambda x: np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
-    executa = True
-    if executa:
-        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.05, Re=1, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, conveccao=True)
-        with open(os.path.join("Picles", "resultados Navier-Stokes.pkl"), "wb") as f:
-            pickle.dump((Problema, resultados), f)
-    else:
-        with open(os.path.join("Picles", "resultados.pkl"), "rb") as f:
-            Problema, resultados = pickle.load(f)
-
-    t0=time.process_time()
-    plotar_perfis(Problema, resultados, 10)
-    t1=time.process_time()
-    print(f"Perfis plotados em {t1-t0:.4f} s")
-
-    # plotar_momento(Problema, resultados, 3)
-    plotar_momento(Problema, resultados, 10)
 
     # nome_malha = "Malha/teste.msh"
     # for ordem in (1, 2,):
