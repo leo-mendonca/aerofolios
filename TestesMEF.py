@@ -42,7 +42,7 @@ def numeracao_nos():
         plt.text(x[i], y[i], i)
     plt.show(block=False)
 
-def teste_forca(n=20, tamanho=0.1, debug=False):
+def teste_forca(n=20, tamanho=0.1, debug=False, executa=True):
     cilindro = AerofolioFino.Cilindro(.5, 0, 1)
     nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n, tamanho=tamanho)
     Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
@@ -59,7 +59,13 @@ def teste_forca(n=20, tamanho=0.1, debug=False):
         (Problema.nos_cont["af"], lambda x: 0.),
     ]
     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 50.),]
-    resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True)
+    if executa:
+        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True)
+        with open("resultados_forca.pkl", "wb") as f:
+            pickle.dump((Problema, resultados), f)
+    else:
+        with open("resultados_forca.pkl", "rb") as f:
+            Problema, resultados = pickle.load(f)
     u=resultados[10]["u"]
     p=resultados[10]["p"]
     forca, x, tensao=Problema.calcula_forcas(p,u, debug=debug)
@@ -118,7 +124,7 @@ def teste_poiseuille(tamanho=0.1, p0=100, conveccao=True):
 
 
 if __name__ == "__main__":
-    teste_forca(n=40, tamanho=0.1, debug=True)
+    teste_forca(n=40, tamanho=0.1, debug=False, executa=False)
     plt.show(block=False)
     teste_poiseuille(tamanho=0.2, p0=-100, conveccao=False)
     plt.show()

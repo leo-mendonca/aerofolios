@@ -1024,18 +1024,20 @@ class FEA(object):
             ##Definindo os campos de velocidade e pressao no elemento
             u_local=u[self.elementos[l]] ##vetor de velocidades do elemento
             p_local=p[self.mascara_nos_o1[self.elementos_o1[l]]] ##vetor de pressoes do elemento
-            aux,bux,cux,dux,eux,fux=(u_local[:,0]*coeficientes_o2.T).sum(axis=0) ##coeficientes (a,b,c...) da funcao de forma ponderada pela velocidade em cada no
-            auy, buy, cuy, duy, euy, fuy = (u_local[:, 1] * coeficientes_o2.T).sum(axis=0)
-            ap,bp,cp=(p_local*coeficientes_o1.T).sum(axis=0) ##coeficientes (a,b,c...) da funcao de forma ponderada pela pressao em cada no
+            aux,bux,cux,dux,eux,fux=(u_local[:,0]*coeficientes_o2.T).sum(axis=1) ##coeficientes (a,b,c...) da funcao de forma ponderada pela velocidade em cada no
+            auy, buy, cuy, duy, euy, fuy = (u_local[:, 1] * coeficientes_o2.T).sum(axis=1)
+            ap,bp,cp=(p_local*coeficientes_o1.T).sum(axis=1) ##coeficientes (a,b,c...) da funcao de forma ponderada pela pressao em cada no
 
             ##definindo a geometria
             (x0,y0), (x1,y1)=self.x_nos[a,:2]-self.x_nos[self.elementos[l,0],:2] #posicao de inicio e fim da aresta, relativo ao primeiro ponto do elemento
             comprimento=np.linalg.norm([x1-x0, y1-y0]) ##comprimento da aresta
             ponto_medio_rel=np.array([x0+x1,y0+y1])/2 ##posicao media da aresta
+            ponto_medio=ponto_medio_rel+self.x_nos[self.elementos[l,0],:2]
+
             normal=np.array([y1-y0, -(x1-x0)]) ##vetor normal a aresta
             normal=normal/np.linalg.norm(normal) ##normalizando o vetor normal
-            terceiro_no=np.setdiff1d(self.elementos[l], a)[0] ##no que nao pertence a aresta
-            normal*=np.sign((self.x_nos[terceiro_no,:2]-ponto_medio_rel)@normal) ##garantindo que a normal aponta para fora do objeto, ou seja, para dentro do ecoamento
+            terceiro_no=np.setdiff1d(self.elementos_o1[l], a)[0] ##no que nao pertence a aresta
+            normal*=np.sign((self.x_nos[terceiro_no,:2]-ponto_medio)@normal) ##garantindo que a normal aponta para fora do objeto, ou seja, para dentro do ecoamento
             if not debug:
                 ##calculo dos coeficientes da funcao linear que representa cada componente da tensao
                 coeficientes_sigma=np.zeros((2,2,3), dtype=np.float64) #em cada entrada, temos o vetor de coeficientes (a,b,c) daquela componente de tensao
@@ -1060,7 +1062,7 @@ class FEA(object):
             tensao=integral_sigma@normal
             forca=tensao*comprimento
             forcas[i]=forca
-            posicoes[i]=ponto_medio_rel+self.x_nos[self.elementos[l,0],:2]
+            posicoes[i]=ponto_medio
             tensoes[i]=tensao
         return forcas, posicoes, tensoes
 
