@@ -849,7 +849,7 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False):
+    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False, u0=0, v0=0, p0=0):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
@@ -858,14 +858,15 @@ class FEA(object):
         :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
         :param conveccao: bool. Se True, considera a conveccao na equacao de Navier-Stokes. Se False, supoe que o termo convectivo eh desprezivel, caindo na equacao de Stokes
         '''
+        ##TODO Implementar a outra abordagem de split IPCS, em que u* eh calculado sem considerar o gradiente de pressao
         ##Definindo a estrutura da matriz de solucao
         n = len(self.nos)
         k = len(self.nos_o1)
         m = 2 * n + k  # duas dimensoes de velocidade (ordem 2) e uma de pressao (ordem 1)
 
         ##Inicializando os vetores de solucao
-        u_n = np.zeros((len(self.nos), 2), dtype=np.float64)
-        p_n = np.zeros(self.nos_o1.shape, dtype=np.float64)  # a ordem dos elementos da pressao deve ser menor que da velocidade
+        u_n = np.ones((len(self.nos), 2), dtype=np.float64)*np.array([u0, v0])  # velocidade inicial
+        p_n = np.ones(self.nos_o1.shape, dtype=np.float64)*p0  # a ordem dos elementos da pressao deve ser menor que da velocidade
 
         ##Aplicando condicoes de dirichlet nos valores iniciais
         for (cont, funcao) in ux_dirichlet:

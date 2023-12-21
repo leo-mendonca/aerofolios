@@ -41,6 +41,8 @@ def numeracao_nos():
     for i in range(len(x)):
         plt.text(x[i], y[i], i)
     plt.show(block=False)
+    return
+
 
 def teste_forca(n=20, tamanho=0.1, debug=False, executa=True):
     cilindro = AerofolioFino.Cilindro(.5, 0, 1)
@@ -58,13 +60,14 @@ def teste_forca(n=20, tamanho=0.1, debug=False, executa=True):
         # (Problema.nos_cont["inferior"], lambda x: 0.),
         (Problema.nos_cont["af"], lambda x: 0.),
     ]
-    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 50.),]
+    p0=50.
+    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: p0),]
     if executa:
-        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True)
-        with open("resultados_forca.pkl", "wb") as f:
+        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True, u0=1., p0=p0)
+        with open("Picles/resultados_forca.pkl", "wb") as f:
             pickle.dump((Problema, resultados), f)
     else:
-        with open("resultados_forca.pkl", "rb") as f:
+        with open("Picles/resultados_forca.pkl", "rb") as f:
             Problema, resultados = pickle.load(f)
     u=resultados[10]["u"]
     p=resultados[10]["p"]
@@ -124,7 +127,7 @@ def teste_poiseuille(tamanho=0.1, p0=100, conveccao=True):
 
 
 if __name__ == "__main__":
-    teste_forca(n=40, tamanho=0.1, debug=False, executa=False)
-    plt.show(block=False)
+    teste_forca(n=1000, tamanho=0.1, debug=False, executa=True)
+    plt.show(block=True)
     teste_poiseuille(tamanho=0.2, p0=-100, conveccao=False)
     plt.show()
