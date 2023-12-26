@@ -54,7 +54,7 @@ def plotar_perfis(Problema, resultados, t, lim_x=(0,5)):
     eixo.legend()
     return
 
-def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_grade=None, y_grade=None, local_grade=None, plota=True, titulo=""):
+def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_grade=None, y_grade=None, local_grade=None, plota=True, titulo="", path_salvar=None, aspecto=(6,4)):
     '''
     :param Problema:
     :param variavel: ux, uy ou p
@@ -90,11 +90,16 @@ def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_
                 else:
                     mapa[i,j]=np.nan
     if plota:
-        plt.figure()
+        fig, eixo=plt.subplots()
         plt.title(titulo)
+        plot_mapa=plt.pcolormesh(x,y,mapa.T)
         plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.3, color="gray")
-        plt.pcolormesh(x,y,mapa.T)
-        plt.colorbar()
+        fig.set_size_inches(aspecto)
+        eixo.set_aspect("equal")
+        eixocbar=fig.add_axes([eixo.get_position().x1+0.01,eixo.get_position().y0,0.02,eixo.get_position().height])
+        plt.colorbar(plot_mapa,cax=eixocbar)
+    if not path_salvar is None:
+        plt.savefig(path_salvar, dpi=300, bbox_inches="tight")
     return (x,y),mapa
 
 

@@ -146,7 +146,7 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True):
     plt.show(block=False)
     return forca,x
 
-def teste_poiseuille(tamanho=0.1, p0=100, conveccao=True):
+def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1.,dt=0.05,T=3., executa=True):
     nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", tamanho, (5, 1))
     Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
     ux_dirichlet = [
@@ -164,17 +164,21 @@ def teste_poiseuille(tamanho=0.1, p0=100, conveccao=True):
                    ]
     regiao_analitica = lambda x : np.logical_and(x[:, 0] >= 2, x[:, 0] < 4.9)
     solucao_analitica = lambda x : np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
-    executa = True
     if executa :
-        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.05, Re=1, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, conveccao=conveccao)
-        with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "wb") as f :
-            pickle.dump((Problema, resultados), f)
+        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, conveccao=conveccao)
+        # with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "wb") as f :
+        #     pickle.dump((Problema, resultados), f)
+        salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida",f"Poiseuille h={tamanho} dt={dt} Re={Re}.zip"))
+        RepresentacaoEscoamento.plotar_perfis(Problema, resultados, T)
+        RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
+        u=resultados[T]["u"]
+        p=resultados[T]["p"]
     else :
-        with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "rb") as f :
-            Problema, resultados = pickle.load(f)
+        # with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "rb") as f :
+        #     Problema, resultados = pickle.load(f)
+        Problema, u, p, nome_malha = carregar_resultados(os.path.join("Saida",f"Poiseuille h={tamanho} dt={dt} Re={Re}.zip"))
 
     t0 = time.process_time()
-    RepresentacaoEscoamento.plotar_perfis(Problema, resultados, 10)
     t1 = time.process_time()
     print(f"Perfis plotados em {t1 - t0:.4f} s")
     t2=time.process_time()
@@ -182,18 +186,20 @@ def teste_poiseuille(tamanho=0.1, p0=100, conveccao=True):
     x = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
     y = np.arange(Problema.y_min, Problema.y_max + resolucao, resolucao)
     localizacao=Problema.localiza_grade(x,y)
-    (x,y),mapa=RepresentacaoEscoamento.mapa_de_cor(Problema, resultados[10]["u"][:, 0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade x")
+    path_salvar=os.path.join("Saida",f"Poiseuille h={tamanho} dt={dt} Re={Re} T={T}")
+    (x1,y1),mapa_u=RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=path_salvar+" u.png")
+    (x1,y1),mapa_v=RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade vertical", path_salvar=path_salvar+" v.png")
+    (x1,y1),mapa_p=RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Pressão", path_salvar=path_salvar+" p.png")
     t3=time.process_time()
     print(f"Mapa de cor calculado em {t3-t2:.4f} s")
     t4=time.process_time()
     pontos_inicio=np.linspace([0.,0.1],[0.,0.9], 9)
-    correntes=RepresentacaoEscoamento.linhas_de_corrente(Problema, resultados[10]["u"], pontos_iniciais=pontos_inicio, resolucao=tamanho)
+    correntes=RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=pontos_inicio, resolucao=tamanho)
     t5=time.process_time()
     print(f"Linhas de corrente calculadas em {t5-t4:.4f} s")
 
 
     # plotar_momento(Problema, resultados, 3)
-    RepresentacaoEscoamento.plotar_momento(Problema, resultados, 10)
     plt.show(block=False)
 
 def cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, executa=True):
@@ -227,10 +233,10 @@ def cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, executa=Tru
     plt.show(block=False)
 
 if __name__ == "__main__":
+    teste_poiseuille(tamanho=0.2, p0=0, conveccao=True, executa=False)
     # teste_forca(n=50, tamanho=0.3, debug=False, executa=True)
     plt.close("all")
     teste_forca(n=50, tamanho=0.3, debug=False, executa=False)
     plt.show(block=True)
-    teste_poiseuille(tamanho=0.2, p0=0, conveccao=True)
     plt.show(block=True)
     plt.show()
