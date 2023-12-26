@@ -92,7 +92,7 @@ def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_
     if plota:
         fig, eixo=plt.subplots()
         plt.title(titulo)
-        plot_mapa=plt.pcolormesh(x,y,mapa.T)
+        plot_mapa=plt.pcolormesh(x,y,mapa.T, cmap="turbo")
         plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.3, color="gray")
         fig.set_size_inches(aspecto)
         eixo.set_aspect("equal")

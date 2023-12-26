@@ -147,24 +147,25 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True):
     return forca,x
 
 def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1.,dt=0.05,T=3., executa=True):
-    nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", tamanho, (5, 1))
-    Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
-    ux_dirichlet = [
-        (Problema.nos_cont["esquerda"], lambda x : 1.),
-        (Problema.nos_cont["superior"], lambda x : 0.),
-        (Problema.nos_cont["inferior"], lambda x : 0.),
-    ]
-    uy_dirichlet = [
-        (Problema.nos_cont["esquerda"], lambda x : 0.),
-        (Problema.nos_cont["superior"], lambda x : 0.),
-        (Problema.nos_cont["inferior"], lambda x : 0.),
-    ]
-    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x : p0),
-                   # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
-                   ]
-    regiao_analitica = lambda x : np.logical_and(x[:, 0] >= 2, x[:, 0] < 4.9)
-    solucao_analitica = lambda x : np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
+
     if executa :
+        nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", tamanho, (5, 1))
+        Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
+        ux_dirichlet = [
+            (Problema.nos_cont["esquerda"], lambda x: 1.),
+            (Problema.nos_cont["superior"], lambda x: 0.),
+            (Problema.nos_cont["inferior"], lambda x: 0.),
+        ]
+        uy_dirichlet = [
+            (Problema.nos_cont["esquerda"], lambda x: 0.),
+            (Problema.nos_cont["superior"], lambda x: 0.),
+            (Problema.nos_cont["inferior"], lambda x: 0.),
+        ]
+        p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: p0),
+                       # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
+                       ]
+        regiao_analitica = lambda x: np.logical_and(x[:, 0] >= 2, x[:, 0] < 4.9)
+        solucao_analitica = lambda x: np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
         resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, conveccao=conveccao)
         # with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "wb") as f :
         #     pickle.dump((Problema, resultados), f)
@@ -233,10 +234,10 @@ def cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, executa=Tru
     plt.show(block=False)
 
 if __name__ == "__main__":
-    teste_poiseuille(tamanho=0.2, p0=0, conveccao=True, executa=False)
+    teste_poiseuille(tamanho=0.03, p0=0, conveccao=True, executa=True, dt=0.01, T=3, Re=1)
     # teste_forca(n=50, tamanho=0.3, debug=False, executa=True)
+    plt.show(block=True)
     plt.close("all")
     teste_forca(n=50, tamanho=0.3, debug=False, executa=False)
-    plt.show(block=True)
     plt.show(block=True)
     plt.show()
