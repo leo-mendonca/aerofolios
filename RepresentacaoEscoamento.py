@@ -93,7 +93,7 @@ def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_
         fig, eixo=plt.subplots()
         plt.title(titulo)
         plot_mapa=plt.pcolormesh(x,y,mapa.T, cmap="turbo")
-        plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.3, color="gray")
+        # plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.1, color="gray")
         fig.set_size_inches(aspecto)
         eixo.set_aspect("equal")
         eixocbar=fig.add_axes([eixo.get_position().x1+0.01,eixo.get_position().y0,0.02,eixo.get_position().height])
@@ -134,10 +134,14 @@ def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_exclu
                 break
         linhas[-1]=np.array(linhas[-1],dtype=np.float64)
     if plota:
-        plt.figure()
+        fig,eixo=plt.subplots()
         plt.title("Linhas de corrente")
         for linha in linhas:
             plt.plot(linha[:,0],linha[:,1], color="black")
+        eixo.set_xlim(Problema.x_min,Problema.x_max)
+        eixo.set_ylim(Problema.y_min,Problema.y_max)
+        eixo.set_aspect("equal")
+
     return linhas
 
 

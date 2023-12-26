@@ -851,7 +851,7 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False, u0=0, v0=0, p0=0, salvar_cada=10):
+    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False, u0=0, v0=0, p0=0, salvar_cada=10, formulacao="A"):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
@@ -901,7 +901,9 @@ class FEA(object):
         A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
         ##p_ast
         A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
-        b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
+        if formulacao=="A":
+            b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
+        elif formulacao=="B": pass
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
         if conveccao:
             D_x, D_y=self.monta_tensor_convectivo(ordem=2) ##tensores relevantes para o termo convectivo derivado em x e y, respectivamente
@@ -924,7 +926,6 @@ class FEA(object):
             ##Calculando u*
             # A matriz de solucao tem formato (2px2p), pois diz respeito apenas a velocidade
             vetor_un = np.concatenate(((mat_integracao_o2) @ u_n[:, 0], (mat_integracao_o2) @ u_n[:, 1]))
-            vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
             if conveccao:
                 ux_elementos=u_n[:,0][self.elementos]
                 uy_elementos=u_n[:,1][self.elementos]
@@ -938,9 +939,14 @@ class FEA(object):
                 vdvdy=calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
                 termo_convectivo_y=udvdx+vdvdy
                 vetor_convectivo=np.concatenate((termo_convectivo_x, termo_convectivo_y))
-                b_u_ast=vetor_un / dt - vetor_gradp - vetor_convectivo + vetor_dirich_u
+
             else:
-                b_u_ast = vetor_un / dt - vetor_gradp + vetor_dirich_u
+                vetor_convectivo=0
+            if formulacao=="A":
+                vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
+                b_u_ast = vetor_un / dt - vetor_gradp - vetor_convectivo + vetor_dirich_u
+            elif formulacao=="B":
+                b_u_ast = vetor_un / dt - vetor_convectivo + vetor_dirich_u
             u_ast = ssp.linalg.spsolve(A_u_ast,b_u_ast)
 
             u_ast = u_ast.reshape((2, len(self.nos))).T
@@ -951,11 +957,14 @@ class FEA(object):
             p_ast = ssp.linalg.spsolve(A_p, b_p)
 
             ##Calculando p_n+1
-            p = p_n + p_ast
+            if formulacao=="A":
+                p = p_n + p_ast
+            elif formulacao=="B":
+                p=p_ast.copy()
 
             ##Calculando u_n+1
             vetor_u_ast = np.concatenate((mat_integracao_o2 @ u_ast[:, 0], mat_integracao_o2 @ u_ast[:, 1]))
-            vetor_gradp = np.concatenate((mat_gradp_x @ p_ast, mat_gradp_y @ p_ast))
+            vetor_gradp = np.concatenate((mat_gradp_x @ p_ast, mat_gradp_y @ p_ast)) ##Na formulacao B, p_ast eh o proprio p
             b_u = vetor_u_ast / dt - vetor_gradp + vetor_dirich_u
             u = ssp.linalg.spsolve(A_u, b_u)
             u = u.reshape((2, len(self.nos))).T
