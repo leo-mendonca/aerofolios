@@ -2,6 +2,8 @@ import time
 import math
 import os
 
+import numpy as np
+
 import Malha
 
 from Definicoes import *
@@ -218,6 +220,8 @@ class FEA(object):
         self.velocidade = velocidade
         self.aerofolio = aerofolio
         self.nos, self.x_nos, self.elementos, self.arestas, self.nos_cont, self.x_cont, self.arestas_cont = Malha.ler_malha(nome_malha, tag_fis)
+        self.x_min, self.y_min =np.min(self.x_nos, axis=0)[:2]
+        self.x_max, self.y_max =np.max(self.x_nos, axis=0)[:2]
         self.nos_o1, self.elementos_o1 = Malha.reduz_ordem(self.elementos)
         self.arestas_o1=self.arestas[:,(0,2)] #inclui apenas os nos inicial e final da aresta
         self.arestas_cont_o1={chave:self.arestas_cont[chave][:,(0,2)] for chave in self.arestas_cont.keys()}
@@ -263,8 +267,6 @@ class FEA(object):
         nose[~np.in1d(nose,self.nos_o1)]=-1
         uni, inv = np.unique(nose, return_inverse=True)
         self.mascara_nos_o1=inv
-
-
 
     def matriz_laplaciano_escalar2(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1, verbose=False, gauss=False):
         '''Monta a matriz A do sistema linear correspondente a uma equacao de Laplace nabla^2(p)=0, com p escalar
@@ -849,7 +851,7 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False, u0=0, v0=0, p0=0):
+    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False, u0=0, v0=0, p0=0, salvar_cada=10):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
@@ -914,6 +916,7 @@ class FEA(object):
 
         resultados = {}  # Dicionario contendo os resultados da simulacao para alguns passos de tempo
 
+        cont_salvar=0 #quando chega a 10, salvamos o valor atual de u e p
         tempos = np.arange(0, T + dt, dt)
         for t in tempos:
             print(f"Resolvendo para t={t}")
@@ -968,9 +971,14 @@ class FEA(object):
                 print(f"Erro maximo: {np.max(np.abs(erro), axis=0)}")
                 print(f"Erro RMS: {np.sqrt(np.average(erro ** 2, axis=0))}")
                 print(f"Erro medio: {np.average(erro, axis=0)}")
+            ###Salvando os valores calculados
+            if cont_salvar==salvar_cada:
+                cont_salvar=0
+                casas_decimais= int(np.ceil(-np.log10(dt)))
+                t_nominal=np.round(t, casas_decimais)
+                resultados[t_nominal] = {"u": u, "u*": u_ast, "p": p, "p*": p_ast}
+            cont_salvar+=1
 
-            if np.isclose(t % 1, 0):
-                resultados[t] = {"u": u, "u*": u_ast, "p": p, "p*": p_ast}
             u_n = u.copy()
             p_n = p.copy()
         tf=time.process_time()
@@ -986,11 +994,27 @@ class FEA(object):
         x0, y0 = pontos[:, 0, :2].T  # vetor de pontos 0 de cada elemento
         x1, y1 = pontos[:, 1, :2].T
         x2, y2 = pontos[:, 2, :2].T
-        pontos = None
+        pontos = None #apenas liberando da memoria o vetor de pontos
         alfa = ((x - x0) * (y2 - y0) - (x2 - x0) * (y - y0)) / self.dets_lin  # vetor de coordenadas alfa do ponto em cada elemento
         beta = ((x1 - x0) * (y - y0) - (x - x0) * (y1 - y0)) / self.dets_lin  # vetor de coordenadas beta do ponto em cada elemento
-        elemento = np.nonzero((alfa >= 0) & (beta >= 0) & (alfa + beta <= 1))[0][0]  # indice do primeiro elemento em que o ponto esta contido
+        try:
+            elemento = np.nonzero((alfa >= 0) & (beta >= 0) & (alfa + beta <= 1))[0][0]  # indice do primeiro elemento em que o ponto esta contido
+        except IndexError:
+            raise ElementoNaoEncontrado(f"O ponto ({x}, {y}) nao esta contido em nenhum elemento da malha")
         return elemento
+
+    def localiza_grade(self, x, y):
+        '''Dada uma grade de pontos, localiza em que elemento da malha cada ponto se encontra'''
+
+        localizacoes=np.zeros((len(x), len(y)), dtype=int)
+        for i, xi in enumerate(x):
+            for j, yj in enumerate(y):
+                try:
+                    localizacoes[i, j]=self.localiza_elemento(xi, yj)
+                except ElementoNaoEncontrado:
+                    localizacoes[i, j]=-1
+        return localizacoes
+
 
     def interpola(self, x, u, ordem=1):
         '''Interpola a solucao u para um ponto (x,y) qualquer
@@ -1000,17 +1024,42 @@ class FEA(object):
         '''
 
         elemento = self.localiza_elemento(x[0], x[1])
+        return self.interpola_localizado(x, u, elemento, ordem=ordem)
+        # if ordem == 1:
+        #     elementos = self.elementos_o1
+        #     nos = elementos[elemento]
+        #     soma = sum([self.N(no, elemento, x, ordem=ordem) * u[self.mascara_nos_o1[no]] for no in nos])
+        # elif ordem == 2:
+        #     elementos = self.elementos
+        #     nos = elementos[elemento]
+        #     soma = sum([self.N(no, elemento, x, ordem=ordem) * u[no] for no in nos])
+        # else:
+        #     raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
+        # return soma
+
+    def interpola_localizado(self, x, u, elemento, ordem=1):
+        '''Interpola a solucao u para um ponto (x,y) qualquer no elemento especificado
+        :param x: array_like N×2. Array de pares de coordenadas do ponto em que se deseja calcular a funcao de forma
+        :param u: array_like N×2 ou N×1. Array de valores da solucao nos nos da malha
+        :param ordem: int. Ordem do elemento em que se deseja interpolar a solucao
+        '''
+        if elemento==-1:
+            return np.nan
         if ordem == 1:
             elementos = self.elementos_o1
+            nos = elementos[elemento]
+            soma = sum([self.N(no, elemento, x, ordem=ordem) * u[self.mascara_nos_o1[no]] for no in nos])
         elif ordem == 2:
             elementos = self.elementos
+            nos = elementos[elemento]
+            soma = sum([self.N(no, elemento, x, ordem=ordem) * u[no] for no in nos])
         else:
             raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
-        nos = elementos[elemento]
-        soma = sum([self.N(no, elemento, x, ordem=ordem) * u[no] for no in nos])
         return soma
 
-    def calcula_forcas(self, p, u, contorno="af", mu=1., debug=True):
+    def calcula_forcas(self, p, u, contorno="af", Re=1., debug=True):
+        '''Calcula as forcas de arrasto e sustentacao'''
+        mu=1/Re
         arestas=self.arestas_cont_o1[contorno]
         forcas=np.zeros((len(arestas),2))
         posicoes=np.zeros((len(arestas),2))
@@ -1067,7 +1116,8 @@ class FEA(object):
             tensoes[i]=tensao
         return forcas, posicoes, tensoes
 
-
+class ElementoNaoEncontrado(Exception):
+    pass
 
 
 
