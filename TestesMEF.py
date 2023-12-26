@@ -6,7 +6,48 @@ import RepresentacaoEscoamento
 import time
 import os
 import pickle
+import zipfile
 from Definicoes import *
+
+
+def salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo):
+    '''Salva o resultado dop caso estacionario em um arquivo comprimido .zip.
+    Faz par com carregar_resultados'''
+    str_tags="\n".join([f"{k}:{v}" for k,v in tag_fis.items()])
+    ultimo_resultado=max(resultados.keys())
+    u,p=resultados[ultimo_resultado]["u"],resultados[ultimo_resultado]["p"]
+    str_u=",".join(u[:,0].astype(str))
+    str_v=",".join(u[:,1].astype(str))
+    str_p=",".join(p.astype(str))
+
+    with zipfile.ZipFile(nome_arquivo, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as f:
+        f.write(nome_malha, os.path.basename(nome_malha))
+        f.writestr("tag_fis.csv", str_tags)
+        f.writestr("u.csv", str_u)
+        f.writestr("v.csv", str_v)
+        f.writestr("p.csv", str_p)
+        # f.writestr("Problema.pkl", pickle.dumps(Problema))
+        # f.writestr("resultados.pkl", pickle.dumps(resultados))
+
+def carregar_resultados(nome_arquivo):
+    '''Carrega o resultado de um caso estacionario a partir de um arquivo comprimido .zip.
+    Faz par com salvar_resultados'''
+    with zipfile.ZipFile(nome_arquivo, "r") as f:
+        nome_malha=f.namelist()[0]
+        f.extract(nome_malha, path="Malha")
+        tag_fis=f.read("tag_fis.csv").decode("utf-8")
+        tag_fis=dict([linha.split(":") for linha in tag_fis.split("\n")])
+        tag_fis={k:int(v) for k,v in tag_fis.items()}
+        u=f.read("u.csv").decode("utf-8")
+        u=np.array(u.split(","), dtype=float)
+        v=f.read("v.csv").decode("utf-8")
+        v=np.array(v.split(","), dtype=float)
+        p=f.read("p.csv").decode("utf-8")
+        p=np.array(p.split(","), dtype=float)
+    nome_malha=os.path.join("Malha", nome_malha)
+    u=np.stack([u,v], axis=1)
+    fea=ElementosFinitos.FEA(nome_malha, tag_fis)
+    return fea, u, p, nome_malha
 
 def teste_cilindro(n=50):
     cilindro = AerofolioFino.Cilindro(.5, 0, 1)
@@ -43,7 +84,6 @@ def numeracao_nos():
     plt.show(block=False)
     return
 
-
 def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True):
     cilindro = AerofolioFino.Cilindro(.5, 0, 1)
     nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n, tamanho=tamanho)
@@ -62,15 +102,22 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True):
     ]
     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: p0),]
     T=3
+    dt=0.01
+    Re=1
     if executa:
-        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=0.01, Re=1, conveccao=True, u0=1., p0=p0)
-        with open("Picles/resultados_forca.pkl", "wb") as f:
-            pickle.dump((Problema, resultados), f)
+        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, conveccao=True, u0=1., p0=p0)
+        # with open("Picles/resultados_forca.pkl", "wb") as f:
+        #     pickle.dump((Problema, resultados), f)
+        salvar_resultados(nome_malha, tag_fis, resultados, f"Saida/Cilindro n={n} h={tamanho} dt={dt} Re={Re}.zip")
+        RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
+        u = resultados[T]["u"]
+        p = resultados[T]["p"]
     else:
-        with open("Picles/resultados_forca.pkl", "rb") as f:
-            Problema, resultados = pickle.load(f)
-    u=resultados[T]["u"]
-    p=resultados[T]["p"]
+
+        # with open("Picles/resultados_forca.pkl", "rb") as f:
+        #     Problema, resultados = pickle.load(f)
+        Problema, u, p, nome_malha = carregar_resultados(f"Saida/Cilindro n={n} h={tamanho} dt={dt} Re={Re}.zip")
+
     forca, x, tensao=Problema.calcula_forcas(p,u, debug=debug)
     F=np.sum(forca,axis=0)
     x_rel=x-np.array([0.5,0])
@@ -78,15 +125,15 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True):
     print(f"Forca de arrasto: {F[0]}")
     print(f"Forca de sustentacao: {F[1]}")
     print(f"Momento: {M}")
-    RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
     vetor_F=forca/200
-    vetor_tensao=tensao/2000
+    vetor_tensao=tensao/200
     plt.figure()
     theta=np.arange(0,2*np.pi,0.01)
     plt.plot(.5+0.5*np.cos(theta),0.5*np.sin(theta),'b-', alpha=0.3, linewidth=2)
     for i in range(len(x)):
         plt.plot([x[i,0],x[i,0]+vetor_tensao[i,0]],[x[i,1],x[i,1]+vetor_tensao[i,1]],'k-')
     (x,y),mapa_p=RepresentacaoEscoamento.mapa_de_cor(Problema,p, ordem=1, resolucao=0.05, titulo=u"Pressão")
+    ##Salvando os resultados
     resolucao=0.05
     x = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
     y = np.arange(Problema.y_min, Problema.y_max + resolucao, resolucao)
@@ -180,7 +227,10 @@ def cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, executa=Tru
     plt.show(block=False)
 
 if __name__ == "__main__":
-    teste_forca(n=50, tamanho=0.2, debug=False, executa=True)
+    # teste_forca(n=50, tamanho=0.3, debug=False, executa=True)
+    plt.close("all")
+    teste_forca(n=50, tamanho=0.3, debug=False, executa=False)
+    plt.show(block=True)
     teste_poiseuille(tamanho=0.2, p0=0, conveccao=True)
     plt.show(block=True)
     plt.show()
