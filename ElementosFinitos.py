@@ -155,7 +155,7 @@ def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False
         plt.show(block=False)
 
 def produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2):
-    '''Calcula, em cada par j,k de nos em cada elemento da malha, o produto ux_i*uy_j dos valores nodais
+    '''Calcula, em cada par j,k de nos em cada elemento da malha, o produto ux_j*uy_k dos valores nodais
     Usado para calcular o termo de conveccao do problema de Navier-Stokes
     Se ux=uy, calcula o produto cartesiano de uma mesma variavel
     :param ux_elementos: np.ndarray n_ex6. array de elementos contendo o valor de ux em cada no de cada elemento
@@ -178,7 +178,7 @@ def tensor_pertencimento(elementos):
             i=elementos[l,q]
             posicao.append((i,l,q))
             valor.append(1)
-
+    valor=np.array(valor, dtype=np.float64)
     tensor=tf.sparse.SparseTensor(posicao, valor, dense_shape=(n_nos, elementos.shape[0], elementos.shape[1]))
     return tensor
 
@@ -193,11 +193,8 @@ def calcula_termo_convectivo(produtos, tensor_convectivo, tensor_pertencimento, 
     G=tensor_pertencimento #Gilq=1 se o no i eh o q-esimo no do elemento l
     # p=elementos.shape[1] #numero de nos por elemento, igual a 6 no elementos quadratico
     P=produtos #Pljk eh o produto de uj*uk no elemento l
-    t1=time.process_time()
     F=np.sum(D*P, axis=(2,3)).T #Flq eh a soma de Dqljk*Pljk sobre j e k
-    t2=time.process_time()
     integral=tf.sparse.reduce_sum(G*F, axis=(1,2))._numpy()
-    t3=time.process_time()
     integral[nos_dirichlet]*=0
     return integral
 
@@ -647,7 +644,7 @@ class FEA(object):
         calc_qrs={"x":lambda a,b,c,d,e,f, x, y: (b,2*d*x[1]+f*y[1], 2*d*x[2]+f*y[2]),
                   "y": lambda a,b,c,d,e,f, x, y: (c,2*e*y[1]+f*x[1], 2*e*y[2]+f*x[2])}
         n_elem=len(self.elementos)
-        tensores= {"x":np.zeros(( p,n_elem, p, p)), "y":np.zeros(( p,n_elem, p, p))}
+        tensores= {"x":np.zeros(( p,n_elem, p, p),dtype=np.float64), "y":np.zeros(( p,n_elem, p, p),dtype=np.float64)}
         #O tensor sera simetrico entre i e j, logo nao eh necessario fazer o loop para j>i
         x_elem=self.x_nos[elementos]
         for l in range(n_elem):
@@ -930,12 +927,13 @@ class FEA(object):
                 ux_elementos=u_n[:,0][self.elementos]
                 uy_elementos=u_n[:,1][self.elementos]
                 produtos_uxuy = produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2)
+                produtos_uyux = produto_cartesiano_nodais(uy_elementos, ux_elementos, ordem=2) ##TODO fazer a otimizacao obvia aqui (transpor uxuy para uyux)
                 produtos_uxux = produto_cartesiano_nodais(ux_elementos, ux_elementos, ordem=2)
                 produtos_uyuy = produto_cartesiano_nodais(uy_elementos, uy_elementos, ordem=2)
                 ududx=calcula_termo_convectivo(produtos_uxux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_ux)
                 vdudy=calcula_termo_convectivo(produtos_uxuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_ux)
                 termo_convectivo_x=ududx+vdudy
-                udvdx=calcula_termo_convectivo(produtos_uxuy, D_x, self.pertencimento, nos_dirichlet=nos_dirich_uy)
+                udvdx=calcula_termo_convectivo(produtos_uyux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_uy)
                 vdvdy=calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
                 termo_convectivo_y=udvdx+vdvdy
                 vetor_convectivo=np.concatenate((termo_convectivo_x, termo_convectivo_y))
@@ -1133,6 +1131,22 @@ class ElementoNaoEncontrado(Exception):
 if __name__ == "__main__":
     import pickle
     from RepresentacaoEscoamento import plotar_momento, plotar_perfis
+    nome_malha, tag_fis=Malha.malha_quadrada("teste", 0.25)
+    Problema=FEA(nome_malha, tag_fis)
+    ux_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x: 1.),
+        (Problema.nos_cont["superior"], lambda x: 0.),
+        (Problema.nos_cont["inferior"], lambda x: 0.),
+    ]
+    uy_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x: 0.),
+        (Problema.nos_cont["superior"], lambda x: 0.),
+        (Problema.nos_cont["inferior"], lambda x: 0.),
+    ]
+    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0),
+                   # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
+                   ]
+    resultados=Problema.escoamento_IPCS_Stokes(conveccao=True, ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, salvar_cada=10, formulacao="A")
 
     # tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
     # nome_malha = "Malha/teste 5-1.msh"

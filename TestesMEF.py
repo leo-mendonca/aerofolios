@@ -251,18 +251,13 @@ def teste_cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, execu
     correntes_inversas=RepresentacaoEscoamento.linhas_de_corrente(Problema, -u, pontos_iniciais=iniciais, resolucao=tamanho/10, eixo=eixo)
     plt.savefig(path_salvar+" correntes.png", dpi=300, bbox_inches="tight")
 
-
-
-
-    plt.show(block=False)
-
-def compara_referencia(h, dt, T, formulacao="A", plota=True):
+def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
     '''Compara os resultados de um caso estacionario com os resultados de referencia.
     Recebe como entrada um caso ja devidamente calculado'''
     arquivo_referencia="Entrada/Referencia/Cavidade solucao referencia.txt"
-    valores_Re=(0.01,10,100,400,1000)
+    valores_Re=(0.01,10,100,400,1000, "inf")
     dframe_erros=pd.DataFrame(index=valores_Re,columns=["u_med","u_rms","u_max","v_med","v_rms","v_max"], dtype=np.float64)
-    roda_cores={0.01: "b", 10: "g", 100: "r", 400: "c", 1000: "m"}
+    roda_cores={0.01: "b", 10: "g", 100: "r", 400: "c", 1000: "m", "inf":"y"}
     path_salvar=os.path.join("Saida","Cavidade",f"Comparacao h={h} dt={dt} T={T} {formulacao}")
     if plota:
         fig_u, eixo_u=plt.subplots()
@@ -281,7 +276,10 @@ def compara_referencia(h, dt, T, formulacao="A", plota=True):
         arquivo_resultados=os.path.join("Saida","Cavidade",f"cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}.zip")
         Problema, u, p, nome_malha = carregar_resultados(arquivo_resultados)
         dframe_ref = pd.read_csv(arquivo_referencia)
-        vel_ref=dframe_ref.loc[11:,f"Re={Re}"]
+        if Re=="inf":
+            vel_ref=dframe_ref.loc[11:,f"Re=0.01"]
+        else:
+            vel_ref = dframe_ref.loc[11:, f"Re={Re}"]
         u_ref,v_ref=vel_ref.values.reshape((2,len(vel_ref)//2))
         pontos_u=np.linspace([0.5,0.0625],[0.5,0.9375], 15)
         pontos_v=np.linspace([0.0625,0.5],[0.9375,0.5], 15)
@@ -316,12 +314,14 @@ def compara_referencia(h, dt, T, formulacao="A", plota=True):
 
 if __name__ == "__main__":
     # teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, executa=True, dt=0.01, T=2, Re=1, formulacao="A")
+    teste_cavidade(tamanho=0.025, conveccao=True, dt=0.01, T=1, Re=100, formulacao="A")
+    plt.show(block=True)
 
-    # teste_cavidade(tamanho=0.01, p0=0, conveccao=True, executa=False, dt=0.01, T=1, Re=1, formulacao="A")
+    # teste_cavidade(tamanho=0.01, p0=0, conveccao=False, executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
     # for Re in (0.01,10,100,400,1000):
     #     teste_cavidade(tamanho=0.2, p0=0, conveccao=True, executa=True, dt=0.1, T=1, Re=Re, formulacao="A")
     #     plt.close("all")
-    erros=compara_referencia(h=0.01, dt=0.01, T=1, formulacao="A", plota=True)
+    erros=compara_cavidade_ref(h=0.01, dt=0.01, T=1, formulacao="A", plota=True)
     plt.show(block=True)
     for Re in (400,1000):
         teste_cavidade(tamanho=0.01, p0=0, conveccao=True, executa=True, dt=0.01, T=1, Re=Re, formulacao="A")
