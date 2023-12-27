@@ -939,7 +939,6 @@ class FEA(object):
                 vdvdy=calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
                 termo_convectivo_y=udvdx+vdvdy
                 vetor_convectivo=np.concatenate((termo_convectivo_x, termo_convectivo_y))
-
             else:
                 vetor_convectivo=0
             if formulacao=="A":

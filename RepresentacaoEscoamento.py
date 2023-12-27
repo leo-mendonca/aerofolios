@@ -7,7 +7,7 @@ import ElementosFinitos
 from Definicoes import *
 
 
-def plotar_momento(Problema, resultados, t, plotar_auxiliares=False):
+def plotar_momento(Problema, resultados, t, plotar_auxiliares=True):
     plt.figure()
     plt.suptitle(f"Velocidade horizontal - ux   t= {t} s")
     plt.triplot(Problema.x_nos[:, 0], Problema.x_nos[:, 1], Problema.elementos_o1, alpha=0.5)
@@ -103,7 +103,7 @@ def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_
     return (x,y),mapa
 
 
-def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_excluidas=[], plota=True):
+def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_excluidas=[], plota=True, eixo=None):
     '''
     :param Problema:
     :param u: vetor da velocidade nos nos da malha
@@ -112,7 +112,7 @@ def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_exclu
     :param areas_excluidas: lista de funcoes que retornam True para pontos que devem ser excluidos do mapa de cor
     :return:
     '''
-
+    L=max(Problema.x_max-Problema.x_min,Problema.y_max-Problema.y_min)
     areas_excluidas= areas_excluidas+[lambda p: p[0]<Problema.x_min, lambda p: p[0]>Problema.x_max, lambda p: p[1]<Problema.y_min, lambda p: p[1]>Problema.y_max]
     linhas=[]
     for inicio in pontos_iniciais:
@@ -120,7 +120,7 @@ def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_exclu
         p=inicio*1
         linhas[-1].append(p*1)
         c=0
-        cmax=1/resolucao*10
+        cmax=L/resolucao*2
         while not any([f(p) for f in areas_excluidas]):
             c+=1
             try:
@@ -130,14 +130,18 @@ def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_exclu
             passo=vel/np.linalg.norm(vel)*resolucao
             p+=passo
             linhas[-1].append(p*1)
+            if np.isclose(p, inicio, atol=resolucao/2).all():
+                break
             if c>=cmax:
                 break
         linhas[-1]=np.array(linhas[-1],dtype=np.float64)
     if plota:
-        fig,eixo=plt.subplots()
-        plt.title("Linhas de corrente")
+        if eixo is None:
+            fig,eixo=plt.subplots()
+        fig=eixo.get_figure()
+        eixo.set_title("Linhas de corrente")
         for linha in linhas:
-            plt.plot(linha[:,0],linha[:,1], color="black")
+            eixo.plot(linha[:,0],linha[:,1], color="black")
         eixo.set_xlim(Problema.x_min,Problema.x_max)
         eixo.set_ylim(Problema.y_min,Problema.y_max)
         eixo.set_aspect("equal")
