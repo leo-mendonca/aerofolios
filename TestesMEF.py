@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+
 import AerofolioFino
 import Malha
 import ElementosFinitos
@@ -224,14 +226,14 @@ def teste_cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, execu
         vertice_pressao = np.where(np.logical_and(Problema.x_nos[:, 0] == 1, Problema.x_nos[:, 1] == 0))[0]
         p_dirichlet = [(vertice_pressao, lambda x: p0), ]
         resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, conveccao=conveccao, formulacao=formulacao)
-        salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida","Cavidade",f"cavidade h={tamanho} dt={dt} Re={Re} {formulacao}.zip"))
+        salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida","Cavidade",f"cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip"))
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u=resultados[T]["u"]
         p=resultados[T]["p"]
         # with open(os.path.join("Picles", f"resultados cavidade.pkl h={tamanho} dt={dt} Re={Re} {formulacao}"), "wb") as f :
         #     pickle.dump((Problema, resultados), f)
     else :
-        Problema, u, p, nome_malha = carregar_resultados(os.path.join("Saida", "Cavidade",f"cavidade h={tamanho} dt={dt} Re={Re} {formulacao}.zip"))
+        Problema, u, p, nome_malha = carregar_resultados(os.path.join("Saida", "Cavidade",f"cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip"))
         # with open(os.path.join("Picles", f"resultados cavidade.pkl h={tamanho} dt={dt} Re={Re} {formulacao}"), "rb") as f :
         #     Problema, resultados = pickle.load(f)
     resolucao = tamanho / 3
@@ -254,16 +256,79 @@ def teste_cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, execu
 
     plt.show(block=False)
 
+def compara_referencia(h, dt, T, formulacao="A", plota=True):
+    '''Compara os resultados de um caso estacionario com os resultados de referencia.
+    Recebe como entrada um caso ja devidamente calculado'''
+    arquivo_referencia="Entrada/Referencia/Cavidade solucao referencia.txt"
+    valores_Re=(0.01,10,100,400,1000)
+    dframe_erros=pd.DataFrame(index=valores_Re,columns=["u_med","u_rms","u_max","v_med","v_rms","v_max"], dtype=np.float64)
+    roda_cores={0.01: "b", 10: "g", 100: "r", 400: "c", 1000: "m"}
+    path_salvar=os.path.join("Saida","Cavidade",f"Comparacao h={h} dt={dt} T={T} {formulacao}")
+    if plota:
+        fig_u, eixo_u=plt.subplots()
+        fig_v, eixo_v=plt.subplots()
+        eixo_u.set_title(f"Velocidade horizontal em x=0.5")
+        eixo_v.set_title(f"Velocidade vertical em y=0.5")
+        eixo_u.set_xlabel("u")
+        eixo_v.set_ylabel("v")
+        eixo_u.set_ylabel("y")
+        eixo_v.set_xlabel("x")
+        eixo_u.set_xlim(-1,1)
+        eixo_u.set_ylim(0,1)
+        eixo_v.set_xlim(0,1)
+        eixo_v.set_ylim(-1,1)
+    for Re in valores_Re:
+        arquivo_resultados=os.path.join("Saida","Cavidade",f"cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}.zip")
+        Problema, u, p, nome_malha = carregar_resultados(arquivo_resultados)
+        dframe_ref = pd.read_csv(arquivo_referencia)
+        vel_ref=dframe_ref.loc[11:,f"Re={Re}"]
+        u_ref,v_ref=vel_ref.values.reshape((2,len(vel_ref)//2))
+        pontos_u=np.linspace([0.5,0.0625],[0.5,0.9375], 15)
+        pontos_v=np.linspace([0.0625,0.5],[0.9375,0.5], 15)
+        u_calc=np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_u])[:,0]
+        v_calc=np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_v])[:,1]
+        erro_u=u_calc-u_ref
+        u_med=np.average(erro_u)
+        u_rms=np.sqrt(np.average(erro_u**2))
+        u_max=np.max(np.abs(erro_u))
+        erro_v=v_calc-v_ref
+        v_med=np.average(erro_v)
+        v_rms=np.sqrt(np.average(erro_v**2))
+        v_max=np.max(np.abs(erro_v))
+        dframe_erros.loc[Re]=u_med,u_rms,u_max,v_med,v_rms,v_max
+        if plota:
+            eixo_u.scatter(u_ref,pontos_u[:,1],marker='*', color=roda_cores[Re])
+            pontos_u2 = np.linspace([0.5, 0.0625], [0.5, 0.9375], 301)
+            u_calc2= np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_u2])[:,0]
+            eixo_u.plot(u_calc2, pontos_u2[:, 1], color=roda_cores[Re], label=f"Re={Re}")
+            eixo_v.scatter(pontos_v[:,0],v_ref,marker='*', color=roda_cores[Re])
+            pontos_v2 = np.linspace([0.0625, 0.5], [0.9375, 0.5], 301)
+            v_calc2 = np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_v2])[:,1]
+            eixo_v.plot(pontos_v2[:,0], v_calc2,  color=roda_cores[Re], label=f"Re={Re}")
+    if plota:
+        eixo_u.legend()
+        eixo_v.legend()
+        fig_u.savefig(path_salvar+" u.png", dpi=300, bbox_inches="tight")
+        fig_v.savefig(path_salvar+" v.png", dpi=300, bbox_inches="tight")
+    dframe_erros.to_csv(path_salvar+" erros.csv")
+    return dframe_erros
+
+
 if __name__ == "__main__":
     # teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, executa=True, dt=0.01, T=2, Re=1, formulacao="A")
 
     # teste_cavidade(tamanho=0.01, p0=0, conveccao=True, executa=False, dt=0.01, T=1, Re=1, formulacao="A")
-    for Re in (.01, 10, 100, 300):
+    # for Re in (0.01,10,100,400,1000):
+    #     teste_cavidade(tamanho=0.2, p0=0, conveccao=True, executa=True, dt=0.1, T=1, Re=Re, formulacao="A")
+    #     plt.close("all")
+    erros=compara_referencia(h=0.01, dt=0.01, T=1, formulacao="A", plota=True)
+    plt.show(block=True)
+    for Re in (400,1000):
         teste_cavidade(tamanho=0.01, p0=0, conveccao=True, executa=True, dt=0.01, T=1, Re=Re, formulacao="A")
         plt.close("all")
     # teste_forca(n=50, tamanho=0.3, debug=False, executa=True)
     plt.show(block=True)
     plt.close("all")
-    teste_forca(n=50, tamanho=0.3, debug=False, executa=False)
+    # teste_forca(n=50, tamanho=0.3, debug=False, executa=False)
     plt.show(block=True)
     plt.show()
