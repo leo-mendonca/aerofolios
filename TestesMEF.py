@@ -206,7 +206,7 @@ def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1., dt=0.05, T=3., ex
     # plotar_momento(Problema, resultados, 3)
     plt.show(block=False)
 
-def teste_cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, executa=True, formulacao="A"):
+def teste_cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, executa=True, formulacao="A", debug=False):
 
     if executa :
         nome_malha, tag_fis = Malha.malha_quadrada("cavidade", tamanho)
@@ -225,7 +225,7 @@ def teste_cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, execu
         ]
         vertice_pressao = np.where(np.logical_and(Problema.x_nos[:, 0] == 1, Problema.x_nos[:, 1] == 0))[0]
         p_dirichlet = [(vertice_pressao, lambda x: p0), ]
-        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, conveccao=conveccao, formulacao=formulacao)
+        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, conveccao=conveccao, formulacao=formulacao, debug=debug)
         salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida","Cavidade",f"cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip"))
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u=resultados[T]["u"]
@@ -314,7 +314,7 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
 
 if __name__ == "__main__":
     # teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, executa=True, dt=0.01, T=2, Re=1, formulacao="A")
-    teste_cavidade(tamanho=0.025, conveccao=True, dt=0.01, T=1, Re=100, formulacao="A")
+    teste_cavidade(tamanho=0.05, conveccao=True, dt=0.01, T=1, Re=1000, formulacao="A", executa=True, debug=False)
     plt.show(block=True)
 
     # teste_cavidade(tamanho=0.01, p0=0, conveccao=False, executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")

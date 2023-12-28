@@ -261,7 +261,7 @@ class FEA(object):
         ])
         ##Definindo a relacao entre a numeracao dos nos de ordem 1 e 2
         nose=self.nos.copy()
-        nose[~np.in1d(nose,self.nos_o1)]=-1
+        nose[~np.in1d(nose,self.nos_o1)]=self.nos[-1]+1
         uni, inv = np.unique(nose, return_inverse=True)
         self.mascara_nos_o1=inv
 
@@ -631,9 +631,10 @@ class FEA(object):
         A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos_teste), len(nos_tentativa)), dtype=np.float64)
         return A
 
-    def monta_tensor_convectivo(self, ordem=2):
+    def monta_tensor_convectivo(self, ordem=2, debug=False):
         '''Monta o tensor correspondente a integral do termo de conveccao Ni*Nj*dNk/dx
         :param ordem: ordem da malha (1 ou 2)
+        :param debug: se True, calcula a integral numericamente, em vez de analiticamente
         Retorna um dicionario com as chaves "x" e "y", cada uma contendo um tensor de dimensoes (p,n_elem,p,p), onde p eh o numero de nos por elemento e n_elem o numero de elementos
         Diljk=contribuicao dos nos j e k do elemento l para a integral de (u*del)u*Ni'''
         if ordem==2:
@@ -648,43 +649,52 @@ class FEA(object):
         #O tensor sera simetrico entre i e j, logo nao eh necessario fazer o loop para j>i
         x_elem=self.x_nos[elementos]
         for l in range(n_elem):
-            x,y,z=(x_elem[l]-x_elem[l,0]).T
+            pontos=(x_elem[l]-x_elem[l,0])
+            x,y=pontos.T[:2]
             det=self.dets_lin[l]
             for i in range(p):
                 ai,bi,ci,di,ei,fi=self.coefs_o2_alfa[i]
-                for j in range(6-i):
+                for j in range(p):
                     aj,bj,cj,dj,ej,fj=self.coefs_o2_alfa[j]
-                    for k in range(6):
+                    for k in range(p):
                         ak,bk,ck,dk,ek,fk=self.coefs_o2_alfa[k]
-                        for direcao_derivada in ("x","y"):
-                            q,r,s=calc_qrs[direcao_derivada](ak,bk,ck,dk,ek,fk,x,y)
-                            rho=np.array([
-                                ai * aj * q, #constante
-                                ai * aj * r + ai * bj * q + aj * bi * q, #alfa
-                                ai * bj * r + ai * dj * q + aj * bi * r + aj * di * q + bi * bj * q, #beta
-                                ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q, #alfa²
-                                ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q, #beta²
-                                ai * bj * s + ai * cj * r + ai * fj * q + aj * bi * s + aj * ci * r + aj * fi * q + bi * cj * q + bj * ci * q, #alfa*beta
-                                ai * dj * r + aj * di * r + bi * bj * r + bi * dj * q + bj * di * q, #alfa³
-                                ai * ej * s + aj * ei * s + ci * cj * s + ci * ej * q + cj * ei * q, #beta³
-                                ai * dj * s + ai * fj * r + aj * di * s + aj * fi * r + bi * bj * s + bi * cj * r + bi * fj * q + bj * ci * r + bj * fi * q + ci * dj * q + cj * di * q, #alfa²*beta
-                                ai * ej * r + ai * fj * s + aj * ei * r + aj * fi * s + bi * cj * s + bi * ej * q + bj * ci * s + bj * ei * q + ci * cj * r + ci * fj * q + cj * fi * q, #alfa*beta²
-                                bi * dj * r + bj * di * r + di * dj * q, #alfa⁴
-                                ci * ej * s + cj * ei * s + ei * ej * q, #beta⁴
-                                bi * dj * s + bi * fj * r + bj * di * s + bj * fi * r + ci * dj * r + cj * di * r + di * fj * q + dj * fi * q, #alfa³*beta
-                                bi * ej * r + bi * fj * s + bj * ei * r + bj * fi * s + ci * dj * s + ci * fj * r + cj * di * s + cj * fi * r + di * ej * q + dj * ei * q + fi * fj * q, #alfa²*beta²
-                                bi * ej * s + bj * ei * s + ci * ej * r + ci * fj * s + cj * ei * r + cj * fi * s + ei * fj * q + ej * fi * q, #alfa*beta³
-                                di * dj * r, #alfa⁵
-                                ei * ej * s, #beta⁵
-                                di * dj * s + di * fj * r + dj * fi * r, #alfa⁴*beta
-                                di * ej * r + di * fj * s + dj * ei * r + dj * fi * s + fi * fj * r, #alfa³*beta²
-                                di * ej * s + dj * ei * s + ei * fj * r + ej * fi * r + fi * fj * s, #alfa²*beta³
-                                ei * ej * r + ei * fj * s + ej * fi * s, #alfa*beta⁴
-                            ])
-                            integracao=det*(rho*self.fatores_rho[:len(rho)]).sum(axis=0)
-                            ##Nos aproveitamos da simetria entre i e j
-                            tensores[direcao_derivada][i,l,j,k]=integracao
-                            tensores[direcao_derivada][j,l,i,k]=integracao
+                        if not debug:
+                            for direcao_derivada in ("x","y"):
+                                q, r, s = calc_qrs[direcao_derivada](ak, bk, ck, dk, ek, fk, x, y)
+                                rho=np.array([
+                                    ai * aj * q, #constante
+                                    ai * aj * r + ai * bj * q + aj * bi * q, #alfa
+                                    ai * bj * r + ai * dj * q + aj * bi * r + aj * di * q + bi * bj * q, #beta
+                                    ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q, #alfa²
+                                    ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q, #beta²
+                                    ai * bj * s + ai * cj * r + ai * fj * q + aj * bi * s + aj * ci * r + aj * fi * q + bi * cj * q + bj * ci * q, #alfa*beta
+                                    ai * dj * r + aj * di * r + bi * bj * r + bi * dj * q + bj * di * q, #alfa³
+                                    ai * ej * s + aj * ei * s + ci * cj * s + ci * ej * q + cj * ei * q, #beta³
+                                    ai * dj * s + ai * fj * r + aj * di * s + aj * fi * r + bi * bj * s + bi * cj * r + bi * fj * q + bj * ci * r + bj * fi * q + ci * dj * q + cj * di * q, #alfa²*beta
+                                    ai * ej * r + ai * fj * s + aj * ei * r + aj * fi * s + bi * cj * s + bi * ej * q + bj * ci * s + bj * ei * q + ci * cj * r + ci * fj * q + cj * fi * q, #alfa*beta²
+                                    bi * dj * r + bj * di * r + di * dj * q, #alfa⁴
+                                    ci * ej * s + cj * ei * s + ei * ej * q, #beta⁴
+                                    bi * dj * s + bi * fj * r + bj * di * s + bj * fi * r + ci * dj * r + cj * di * r + di * fj * q + dj * fi * q, #alfa³*beta
+                                    bi * ej * r + bi * fj * s + bj * ei * r + bj * fi * s + ci * dj * s + ci * fj * r + cj * di * s + cj * fi * r + di * ej * q + dj * ei * q + fi * fj * q, #alfa²*beta²
+                                    bi * ej * s + bj * ei * s + ci * ej * r + ci * fj * s + cj * ei * r + cj * fi * s + ei * fj * q + ej * fi * q, #alfa*beta³
+                                    di * dj * r, #alfa⁵
+                                    ei * ej * s, #beta⁵
+                                    di * dj * s + di * fj * r + dj * fi * r, #alfa⁴*beta
+                                    di * ej * r + di * fj * s + dj * ei * r + dj * fi * s + fi * fj * r, #alfa³*beta²
+                                    di * ej * s + dj * ei * s + ei * fj * r + ej * fi * r + fi * fj * s, #alfa²*beta³
+                                    ei * ej * r + ei * fj * s + ej * fi * s, #alfa*beta⁴
+                                ])
+                                integracao=det*(rho*self.fatores_rho[:len(rho)]).sum(axis=0)
+                                ##Nos aproveitamos da simetria entre i e j
+                                tensores[direcao_derivada][i, l, j, k] = integracao
+                                # tensores[direcao_derivada][j,l,i,k]=integracao
+                        elif debug:
+                            grad=self.grad_N_rel(k,l, pontos, ordem)
+                            grad={"x":grad[:,0], "y":grad[:,1]}
+                            for direcao_derivada in ("x","y"):
+                                valores=(self.N_rel(i,l, pontos, ordem)*self.N_rel(j,l, pontos, ordem)*grad[direcao_derivada])
+                                integracao=det/2*np.average(valores)
+                                tensores[direcao_derivada][i, l, j, k] = integracao
         return tensores["x"], tensores["y"]
 
     def matriz_laplaciano_escalar(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1):
@@ -848,7 +858,7 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False, u0=0, v0=0, p0=0, salvar_cada=10, formulacao="A"):
+    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False, u0=0, v0=0, p0=0, salvar_cada=10, formulacao="A", debug=False):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
@@ -857,7 +867,6 @@ class FEA(object):
         :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
         :param conveccao: bool. Se True, considera a conveccao na equacao de Navier-Stokes. Se False, supoe que o termo convectivo eh desprezivel, caindo na equacao de Stokes
         '''
-        ##TODO Implementar a outra abordagem de split IPCS, em que u* eh calculado sem considerar o gradiente de pressao
         ##Definindo a estrutura da matriz de solucao
         n = len(self.nos)
         k = len(self.nos_o1)
@@ -883,7 +892,7 @@ class FEA(object):
         ##Montando as matrizes principais fora do loop
         mat_lap_o1 = self.matriz_laplaciano_escalar(contornos_dirichlet=p_dirichlet, ordem=1)
         mat_lap_o2 = self.matriz_laplaciano_escalar(contornos_dirichlet=ux_dirichlet, ordem=2)
-        mat_integracao_o1 = self.monta_matriz(procedimento=self.procedimento_integracao_simples, contornos_dirichlet=p_dirichlet, ordem=1)
+        # mat_integracao_o1 = self.monta_matriz(procedimento=self.procedimento_integracao_simples, contornos_dirichlet=p_dirichlet, ordem=1)
         mat_integracao_o2 = self.monta_matriz(procedimento=self.procedimento_integracao_simples, contornos_dirichlet=ux_dirichlet, ordem=2)
         mat_gradp_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=1)
         mat_gradp_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=1)
@@ -903,7 +912,7 @@ class FEA(object):
         elif formulacao=="B": pass
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
         if conveccao:
-            D_x, D_y=self.monta_tensor_convectivo(ordem=2) ##tensores relevantes para o termo convectivo derivado em x e y, respectivamente
+            D_x, D_y=self.monta_tensor_convectivo(ordem=2, debug=debug) ##tensores relevantes para o termo convectivo derivado em x e y, respectivamente
 
         A_p = mat_lap_o1 + A_dirich_p
         ##u
@@ -1131,7 +1140,7 @@ class ElementoNaoEncontrado(Exception):
 if __name__ == "__main__":
     import pickle
     from RepresentacaoEscoamento import plotar_momento, plotar_perfis
-    nome_malha, tag_fis=Malha.malha_quadrada("teste", 0.25)
+    nome_malha, tag_fis=Malha.malha_quadrada("teste", 0.1)
     Problema=FEA(nome_malha, tag_fis)
     ux_dirichlet = [
         (Problema.nos_cont["esquerda"], lambda x: 1.),
@@ -1146,7 +1155,7 @@ if __name__ == "__main__":
     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0),
                    # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
                    ]
-    resultados=Problema.escoamento_IPCS_Stokes(conveccao=True, ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, salvar_cada=10, formulacao="A")
+    resultados=Problema.escoamento_IPCS_Stokes(conveccao=True, ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=1, dt=0.01, Re=1, salvar_cada=10, formulacao="A", debug=True)
 
     # tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
     # nome_malha = "Malha/teste 5-1.msh"
