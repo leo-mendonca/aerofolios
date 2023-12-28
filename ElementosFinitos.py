@@ -941,7 +941,8 @@ class FEA(object):
                 ux_elementos=u_n[:,0][self.elementos]
                 uy_elementos=u_n[:,1][self.elementos]
                 produtos_uxuy = produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2)
-                produtos_uyux = produto_cartesiano_nodais(uy_elementos, ux_elementos, ordem=2) ##TODO fazer a otimizacao obvia aqui (transpor uxuy para uyux)
+                produtos_uyux = produto_cartesiano_nodais(uy_elementos, ux_elementos, ordem=2)
+                produtos_uyux=np.transpose(produtos_uyux, axes=(0,2,1))
                 produtos_uxux = produto_cartesiano_nodais(ux_elementos, ux_elementos, ordem=2)
                 produtos_uyuy = produto_cartesiano_nodais(uy_elementos, uy_elementos, ordem=2)
                 ududx=calcula_termo_convectivo(produtos_uxux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_ux)
@@ -984,6 +985,8 @@ class FEA(object):
             u = u.reshape((2, len(self.nos))).T
             tl2 = time.process_time()
             print(f"Tempo de resolucao: {tl2 - tl1:.2f} s")
+            print(f"Velocidade media: {np.average(u, axis=0)}")
+            print(f"Velocidade maxima: {np.max(u, axis=0)}")
             if not solucao_analitica is None:
                 if not regiao_analitica is None:
                     pontos_an = self.nos[regiao_analitica(self.x_nos)]  # separa apenas os nos selecionados para avaliar a solucao analitica
