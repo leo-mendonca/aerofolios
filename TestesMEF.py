@@ -69,7 +69,7 @@ def teste_cilindro(n=50):
         (Problema.nos_cont["af"], lambda x: 0.),
     ]
     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.),]
-    resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True)
+    resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True)
     RepresentacaoEscoamento.plotar_momento(Problema, resultados, 10)
     # RepresentacaoEscoamento.plotar_perfis(Problema, resultados, 10, lim_x=(-2,0))
     return
@@ -108,7 +108,7 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
     dt=0.01
     Re=1
     if executa:
-        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, conveccao=True, u0=1., p0=p0)
+        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., p0=p0)
         # with open("Picles/resultados_forca.pkl", "wb") as f:
         #     pickle.dump((Problema, resultados), f)
         salvar_resultados(nome_malha, tag_fis, resultados, f"Saida/Cilindro n={n} h={tamanho} dt={dt} Re={Re} {formulacao}.zip")
@@ -169,7 +169,7 @@ def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1., dt=0.05, T=3., ex
                        ]
         regiao_analitica = lambda x: np.logical_and(x[:, 0] >= 2, x[:, 0] < 4.9)
         solucao_analitica = lambda x: np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
-        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, conveccao=conveccao, formulacao=formulacao)
+        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, formulacao=formulacao)
         # with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "wb") as f :
         #     pickle.dump((Problema, resultados), f)
         salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida","Poiseuille",f"Poiseuille h={tamanho} dt={dt} Re={Re} {formulacao}.zip"))
@@ -206,7 +206,7 @@ def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1., dt=0.05, T=3., ex
     # plotar_momento(Problema, resultados, 3)
     plt.show(block=False)
 
-def teste_cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, executa=True, formulacao="A", debug=False):
+def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formulacao="A", debug=False):
 
     if executa :
         nome_malha, tag_fis = Malha.malha_quadrada("cavidade", tamanho)
@@ -225,11 +225,17 @@ def teste_cavidade(tamanho=0.01, p0=0, conveccao=True, dt=0.01, T=3, Re=1, execu
         ]
         vertice_pressao = np.where(np.logical_and(Problema.x_nos[:, 0] == 1, Problema.x_nos[:, 1] == 0))[0]
         p_dirichlet = [(vertice_pressao, lambda x: p0), ]
-        resultados = Problema.escoamento_IPCS_Stokes(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, conveccao=conveccao, formulacao=formulacao, debug=debug)
+        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, formulacao=formulacao, debug=debug)
         salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida","Cavidade",f"cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip"))
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u=resultados[T]["u"]
         p=resultados[T]["p"]
+        ###Avaliando como as grandezas variaram de m passo para outro
+        t_ant=np.sort(list(resultados.keys()))[-2]
+        u_ant=resultados[t_ant]["u"]
+        p_ant=resultados[t_ant]["p"]
+        print(f"Derivada absoluta media da velocidade : {np.mean(np.abs(u-u_ant))/dt}")
+        print(f"Derivada absoluta media da pressao : {np.mean(np.abs(p-p_ant))/dt}")
         # with open(os.path.join("Picles", f"resultados cavidade.pkl h={tamanho} dt={dt} Re={Re} {formulacao}"), "wb") as f :
         #     pickle.dump((Problema, resultados), f)
     else :
@@ -273,36 +279,38 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
         eixo_v.set_xlim(0,1)
         eixo_v.set_ylim(-1,1)
     for Re in valores_Re:
-        arquivo_resultados=os.path.join("Saida","Cavidade",f"cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}.zip")
-        Problema, u, p, nome_malha = carregar_resultados(arquivo_resultados)
-        dframe_ref = pd.read_csv(arquivo_referencia)
-        if Re=="inf":
-            vel_ref=dframe_ref.loc[11:,f"Re=0.01"]
-        else:
-            vel_ref = dframe_ref.loc[11:, f"Re={Re}"]
-        u_ref,v_ref=vel_ref.values.reshape((2,len(vel_ref)//2))
-        pontos_u=np.linspace([0.5,0.0625],[0.5,0.9375], 15)
-        pontos_v=np.linspace([0.0625,0.5],[0.9375,0.5], 15)
-        u_calc=np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_u])[:,0]
-        v_calc=np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_v])[:,1]
-        erro_u=u_calc-u_ref
-        u_med=np.average(erro_u)
-        u_rms=np.sqrt(np.average(erro_u**2))
-        u_max=np.max(np.abs(erro_u))
-        erro_v=v_calc-v_ref
-        v_med=np.average(erro_v)
-        v_rms=np.sqrt(np.average(erro_v**2))
-        v_max=np.max(np.abs(erro_v))
-        dframe_erros.loc[Re]=u_med,u_rms,u_max,v_med,v_rms,v_max
-        if plota:
-            eixo_u.scatter(u_ref,pontos_u[:,1],marker='*', color=roda_cores[Re])
-            pontos_u2 = np.linspace([0.5, 0.0625], [0.5, 0.9375], 301)
-            u_calc2= np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_u2])[:,0]
-            eixo_u.plot(u_calc2, pontos_u2[:, 1], color=roda_cores[Re], label=f"Re={Re}")
-            eixo_v.scatter(pontos_v[:,0],v_ref,marker='*', color=roda_cores[Re])
-            pontos_v2 = np.linspace([0.0625, 0.5], [0.9375, 0.5], 301)
-            v_calc2 = np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_v2])[:,1]
-            eixo_v.plot(pontos_v2[:,0], v_calc2,  color=roda_cores[Re], label=f"Re={Re}")
+        try:
+            arquivo_resultados=os.path.join("Saida","Cavidade",f"cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}.zip")
+            Problema, u, p, nome_malha = carregar_resultados(arquivo_resultados)
+            dframe_ref = pd.read_csv(arquivo_referencia)
+            if Re=="inf":
+                vel_ref=dframe_ref.loc[11:,f"Re=0.01"]
+            else:
+                vel_ref = dframe_ref.loc[11:, f"Re={Re}"]
+            u_ref,v_ref=vel_ref.values.reshape((2,len(vel_ref)//2))
+            pontos_u=np.linspace([0.5,0.0625],[0.5,0.9375], 15)
+            pontos_v=np.linspace([0.0625,0.5],[0.9375,0.5], 15)
+            u_calc=np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_u])[:,0]
+            v_calc=np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_v])[:,1]
+            erro_u=u_calc-u_ref
+            u_med=np.average(erro_u)
+            u_rms=np.sqrt(np.average(erro_u**2))
+            u_max=np.max(np.abs(erro_u))
+            erro_v=v_calc-v_ref
+            v_med=np.average(erro_v)
+            v_rms=np.sqrt(np.average(erro_v**2))
+            v_max=np.max(np.abs(erro_v))
+            dframe_erros.loc[Re]=u_med,u_rms,u_max,v_med,v_rms,v_max
+            if plota:
+                eixo_u.scatter(u_ref,pontos_u[:,1],marker='*', color=roda_cores[Re])
+                pontos_u2 = np.linspace([0.5, 0.0625], [0.5, 0.9375], 301)
+                u_calc2= np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_u2])[:,0]
+                eixo_u.plot(u_calc2, pontos_u2[:, 1], color=roda_cores[Re], label=f"Re={Re}")
+                eixo_v.scatter(pontos_v[:,0],v_ref,marker='*', color=roda_cores[Re])
+                pontos_v2 = np.linspace([0.0625, 0.5], [0.9375, 0.5], 301)
+                v_calc2 = np.array([Problema.interpola(ponto, u, ordem=2) for ponto in pontos_v2])[:,1]
+                eixo_v.plot(pontos_v2[:,0], v_calc2,  color=roda_cores[Re], label=f"Re={Re}")
+        except  FileNotFoundError: pass
     if plota:
         eixo_u.legend()
         eixo_v.legend()
@@ -313,18 +321,17 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
 
 
 if __name__ == "__main__":
-    # teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, executa=True, dt=0.01, T=2, Re=1, formulacao="A")
-    teste_cavidade(tamanho=0.05, conveccao=True, dt=0.01, T=1, Re=1000, formulacao="A", executa=True, debug=False)
-    plt.show(block=True)
-
-    # teste_cavidade(tamanho=0.01, p0=0, conveccao=False, executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
-    # for Re in (0.01,10,100,400,1000):
-    #     teste_cavidade(tamanho=0.2, p0=0, conveccao=True, executa=True, dt=0.1, T=1, Re=Re, formulacao="A")
-    #     plt.close("all")
-    erros=compara_cavidade_ref(h=0.01, dt=0.01, T=1, formulacao="A", plota=True)
+    # teste_poiseuille(tamanho=0.1, p0=0,  executa=True, dt=0.01, T=2, Re=1, formulacao="A")
+    # teste_cavidade(tamanho=0.05,  dt=0.01, T=1, Re=1000, formulacao="A", executa=True, debug=False)
+    # plt.show(block=True)
+    # teste_cavidade(tamanho=0.01, p0=0,  executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
+    for Re in (0.01,10,100,400,1000):
+        teste_cavidade(tamanho=0.01, p0=0, executa=True, dt=0.01, T=10, Re=Re, formulacao="A")
+        plt.close("all")
+    erros=compara_cavidade_ref(h=0.01, dt=0.01, T=10, formulacao="C", plota=True)
     plt.show(block=True)
     for Re in (400,1000):
-        teste_cavidade(tamanho=0.01, p0=0, conveccao=True, executa=True, dt=0.01, T=1, Re=Re, formulacao="A")
+        teste_cavidade(tamanho=0.01, p0=0, executa=True, dt=0.01, T=1, Re=Re, formulacao="A")
         plt.close("all")
     # teste_forca(n=50, tamanho=0.3, debug=False, executa=True)
     plt.show(block=True)

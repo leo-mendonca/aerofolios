@@ -858,15 +858,20 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_Stokes(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, conveccao=False, u0=0, v0=0, p0=0, salvar_cada=10, formulacao="A", debug=False):
+    def escoamento_IPCS_NS(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, u0=0, v0=0, p0=0, salvar_cada=10, formulacao="A", debug=False):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
         :param T: tempo total do escoamento
         :param dt: medida do passo de tempo a cada iteracao
         :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
-        :param conveccao: bool. Se True, considera a conveccao na equacao de Navier-Stokes. Se False, supoe que o termo convectivo eh desprezivel, caindo na equacao de Stokes
+        :param formulacao: str. Formulacao a ser usada para o calculo de u e p. Pode ser "A", "B" ou "C". "A": calculo de u* considerando a pressao do passo anterior. "B": calculo de u* sem considerar a pressao. "C": igual ao A, mas nao inclui o termo convectivo (equacao de STokes)
         '''
+        if formulacao in ("A", "B"):
+            conveccao=True
+        elif formulacao=="C":
+            conveccao=False
+        else: raise ValueError(f"Formulacao {formulacao} nao suportada")
         ##Definindo a estrutura da matriz de solucao
         n = len(self.nos)
         k = len(self.nos_o1)
@@ -907,7 +912,7 @@ class FEA(object):
         A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
         ##p_ast
         A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
-        if formulacao=="A":
+        if formulacao in ("A","C"):
             b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
         elif formulacao=="B": pass
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
@@ -953,6 +958,9 @@ class FEA(object):
                 b_u_ast = vetor_un / dt - vetor_gradp - vetor_convectivo + vetor_dirich_u
             elif formulacao=="B":
                 b_u_ast = vetor_un / dt - vetor_convectivo + vetor_dirich_u
+            elif formulacao=="C":
+                vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
+                b_u_ast = vetor_un / dt - vetor_gradp + vetor_dirich_u
             u_ast = ssp.linalg.spsolve(A_u_ast,b_u_ast)
 
             u_ast = u_ast.reshape((2, len(self.nos))).T
@@ -963,7 +971,7 @@ class FEA(object):
             p_ast = ssp.linalg.spsolve(A_p, b_p)
 
             ##Calculando p_n+1
-            if formulacao=="A":
+            if formulacao in ("A","C"):
                 p = p_n + p_ast
             elif formulacao=="B":
                 p=p_ast.copy()
@@ -1155,7 +1163,7 @@ if __name__ == "__main__":
     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0),
                    # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
                    ]
-    resultados=Problema.escoamento_IPCS_Stokes(conveccao=True, ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=1, dt=0.01, Re=1, salvar_cada=10, formulacao="A", debug=True)
+    resultados=Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=1, dt=0.01, Re=1, salvar_cada=10, formulacao="C", debug=True)
 
     # tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
     # nome_malha = "Malha/teste 5-1.msh"
