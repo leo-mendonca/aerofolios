@@ -1,6 +1,8 @@
 import time
 import math
 import os
+import tensorflow.sparse
+import tensorflow as tf
 
 import numpy as np
 
@@ -197,6 +199,7 @@ def calcula_termo_convectivo(produtos, tensor_convectivo, tensor_pertencimento, 
     integral=tf.sparse.reduce_sum(G*F, axis=(1,2))._numpy()
     integral[nos_dirichlet]*=0
     return integral
+
 
 
 class FEA(object):
@@ -697,6 +700,60 @@ class FEA(object):
                                 tensores[direcao_derivada][i, l, j, k] = integracao
         return tensores["x"], tensores["y"]
 
+    def monta_matriz_convectiva_ao_vivo(self, u_n_x, tensor_convectivo,  nos_dirichlet=[]):
+        '''Monta a matriz que, aplicada no vetor u de velocidades em uma dada direcao, produz o vetor da integracao do tertmo convectivo na equacao'''
+        p=self.elementos.shape[1] ##p=6
+        n_nos=len(self.nos)
+        n_elem=len(self.elementos)
+        D = tensor_convectivo  # Dqljk eh a componente da integral do termo convectivo no elemento l, com o q-esimo no como funcao teste, multiplicado pelo j-esimo e o k-esimo nos do mesmo elemento
+        G = self.pertencimento  # Gilq=1 se o no i eh o q-esimo no do elemento l
+        shape=(len(self.nos),len(self.nos))
+        ##Duqsl=Dqlrs*ulr (soma variando r de 1 a 6)
+        u=u_n_x[self.elementos] ##Valores nodais de u em cada elemento (ne x 6)
+        Du=tf.reduce_sum(tf.transpose(D, perm=[0,3,1,2])* u, axis=-1)
+        ##GDu_jql = G_jls*Du_qsl (soma variando s de 1 a 6)
+        intermediario=[]
+        for i in range(p):
+            intermediario.append(tf.sparse.reduce_sum(G*tf.transpose(Du[i]),axis=-1, output_is_sparse=True))
+        GDu= tf.sparse.reshape(tf.sparse.concat(0, intermediario), (n_nos,p, n_elem)) ##Empilhando as linhas da lista intermediaria
+        intermediario=None
+        ##shape_GDu= (n_nos,p, n_elem)
+        ##GGDu_ij = G_ilq*GDu_jql (soma variando l de 1 a n_elem e q de 1 a 6)
+        ##TODO resolver o fato de que da ruim (nao pode multiplicar 2 esparsos)
+        GGDu=tf.sparse.reduce_sum(G*tf.sparse.transpose(GDu, [0,2,1]), axis=(-1,-2))
+        GGDu[nos_dirichlet] *= 0
+        return GGDu
+    def monta_tensor_matriz_convectiva(self, tensor_convectivo, contornos_dirichlet):
+        '''Produz um tensor que vai, aplicado ao vetor de velocidade do apsso anterior, produzir a matriz que representa o termo convectivo ud/dx ou vd/dy'''
+        D=tensor_convectivo
+        p=self.elementos.shape[1] ##p=6
+        indices, valores=[], []
+        ###Definindo os pontos com condicao de dirichlet, onde a funcao tentativa eh nula
+        pontos_dirichlet = np.concatenate([contornos_dirichlet[i][0] for i in range(len(contornos_dirichlet))])  # lista de todos os pontos com condicao de dirichlet
+        pontos_sem_dirichlet = np.setdiff1d(self.nos, pontos_dirichlet)  # lista de nos da funcao teste sem condição de dirichlet
+        for i in pontos_sem_dirichlet:  # aqui, varremos todos os pontos nos da funcao TESTE
+            elementos_i = np.where(self.elementos == i)[0]  # lista de elementos que contem o ponto i
+            for l in elementos_i:  # varremos cada elemento no qual N_i != 0
+                pos_i = np.nonzero(self.elementos[l] == i)[0][0]  # posicao do ponto i no elemento l
+                ind_i = i
+                for pos_j in range(p):  # varremos os pontos do elemento l
+                    j=self.elementos[l,pos_j]
+                    x_abs, y_abs = self.x_nos[self.elementos[l]].T[:2]
+                    x, y = x_abs - x_abs[0], y_abs - y_abs[0]
+                    pos_j = np.nonzero(self.elementos[l] == j)[0][0]  # posicao do ponto j no elemento l
+                    ind_j = j
+                    for pos_k in range(p):
+                        k=self.elementos[l,pos_k]
+                        ind_k=k
+                        valor=D[pos_i,l, pos_j, pos_k]
+                        indices.append([ind_i, ind_j, ind_k])
+                        valores.append(valor)
+
+        # A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos_teste), len(nos_tentativa)), dtype=np.float64)
+        T= tf.sparse.SparseTensor(indices, valores, dense_shape=(len(self.nos), len(self.nos), len(self.nos)))
+        return T
+
+
     def matriz_laplaciano_escalar(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1):
         A = self.monta_matriz(self.procedimento_laplaciano, contornos_dirichlet, ordem=ordem)
         return A
@@ -868,7 +925,7 @@ class FEA(object):
         :param formulacao: str. Formulacao a ser usada para o calculo de u e p. Pode ser "A", "B" ou "C".
             "A": calculo de u* considerando a pressao do passo anterior. "B": calculo de u* sem considerar a pressao. "C": igual ao A, mas nao inclui o termo convectivo (equacao de STokes); "D": igual ao A, mas considera o termo difusivo so do passo de tempo anterior
         '''
-        if formulacao in ("A", "B", "D"):
+        if formulacao in ("A", "B", "D","E"):
             conveccao=True
         elif formulacao=="C":
             conveccao=False
@@ -905,7 +962,7 @@ class FEA(object):
         mat_gradu_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
         mat_gradu_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
         ##u_ast
-        if formulacao in ("A","B","C"):
+        if formulacao in ("A","B","C", "E"):
             matriz_bloco1 = mat_integracao_o2 / dt - mat_lap_o2 / Re
         elif formulacao=="D":
             matriz_bloco1 = mat_integracao_o2 / dt - (1/2)*mat_lap_o2 / Re
@@ -917,12 +974,14 @@ class FEA(object):
         A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
         ##p_ast
         A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
-        if formulacao in ("A","C", "D"):
+        if formulacao in ("A","C", "D", "E"):
             b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
         elif formulacao=="B": pass
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
         if conveccao:
             D_x, D_y=self.monta_tensor_convectivo(ordem=2, debug=debug) ##tensores relevantes para o termo convectivo derivado em x e y, respectivamente
+            tensor_conv_Dx=self.monta_tensor_matriz_convectiva(D_x, ux_dirichlet)
+            tensor_conv_Dy=self.monta_tensor_matriz_convectiva(D_y, ux_dirichlet)
 
         A_p = mat_lap_o1 + A_dirich_p
         ##u
@@ -943,20 +1002,28 @@ class FEA(object):
             # A matriz de solucao tem formato (2px2p), pois diz respeito apenas a velocidade
             vetor_un = np.concatenate(((mat_integracao_o2) @ u_n[:, 0], (mat_integracao_o2) @ u_n[:, 1]))
             if conveccao:
-                ux_elementos=u_n[:,0][self.elementos]
-                uy_elementos=u_n[:,1][self.elementos]
-                produtos_uxuy = produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2)
-                produtos_uyux = produto_cartesiano_nodais(uy_elementos, ux_elementos, ordem=2)
-                produtos_uyux=np.transpose(produtos_uyux, axes=(0,2,1))
-                produtos_uxux = produto_cartesiano_nodais(ux_elementos, ux_elementos, ordem=2)
-                produtos_uyuy = produto_cartesiano_nodais(uy_elementos, uy_elementos, ordem=2)
-                ududx=calcula_termo_convectivo(produtos_uxux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_ux)
-                vdudy=calcula_termo_convectivo(produtos_uxuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_ux)
-                termo_convectivo_x=ududx+vdudy
-                udvdx=calcula_termo_convectivo(produtos_uyux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_uy)
-                vdvdy=calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
-                termo_convectivo_y=udvdx+vdvdy
-                vetor_convectivo=np.concatenate((termo_convectivo_x, termo_convectivo_y))
+
+                if formulacao in ("A","B","D"):
+                    ux_elementos = u_n[:, 0][self.elementos]
+                    uy_elementos = u_n[:, 1][self.elementos]
+                    produtos_uxuy = produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2)
+                    produtos_uyux = produto_cartesiano_nodais(uy_elementos, ux_elementos, ordem=2)
+                    produtos_uyux=np.transpose(produtos_uyux, axes=(0,2,1))
+                    produtos_uxux = produto_cartesiano_nodais(ux_elementos, ux_elementos, ordem=2)
+                    produtos_uyuy = produto_cartesiano_nodais(uy_elementos, uy_elementos, ordem=2)
+                    ududx=calcula_termo_convectivo(produtos_uxux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_ux)
+                    vdudy=calcula_termo_convectivo(produtos_uxuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_ux)
+                    termo_convectivo_x=ududx+vdudy
+                    udvdx=calcula_termo_convectivo(produtos_uyux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_uy)
+                    vdvdy=calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
+                    termo_convectivo_y=udvdx+vdvdy
+                    vetor_convectivo=np.concatenate((termo_convectivo_x, termo_convectivo_y))
+                elif formulacao=="E": ###Matrizes que aplicadas em um vetor w, calculam udw/dx+vdw/dy (o termo convectivo)
+                    # mat_uddx=self.monta_matriz_convectiva(u_n[:,0], D_x,  nos_dirichlet=nos_dirich_ux)
+                    # mat_vddy=self.monta_matriz_convectiva(u_n[:,1], D_y,  nos_dirichlet=nos_dirich_ux)
+                    mat_uddx=tf.sparse.reduce_sum(tensor_conv_Dx*u_n[:,0],axis=-1)
+                    mat_vddy=tf.sparse.reduce_sum(tensor_conv_Dy*u_n[:,1],axis=-1)
+                    A_u_ast=ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_uddx+mat_vddy, None], [None, matriz_bloco1 + A_dirich_uy+ mat_uddx+mat_vddy]], format="csr")
 
             else:
                 vetor_convectivo=0
@@ -972,6 +1039,9 @@ class FEA(object):
                 vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
                 vetor_difusivo= np.concatenate(((mat_lap_o2/Re) @ u_n[:, 0], (mat_lap_o2/Re) @ u_n[:, 1]))
                 b_u_ast = vetor_un / dt - vetor_gradp - vetor_convectivo + (1/2)*vetor_difusivo + vetor_dirich_u
+            elif formulacao=="E":
+                vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
+                b_u_ast = vetor_un / dt - vetor_gradp + vetor_dirich_u
             u_ast = ssp.linalg.spsolve(A_u_ast,b_u_ast)
 
             u_ast = u_ast.reshape((2, len(self.nos))).T
@@ -982,7 +1052,7 @@ class FEA(object):
             p_ast = ssp.linalg.spsolve(A_p, b_p)
 
             ##Calculando p_n+1
-            if formulacao in ("A","C", "D"):
+            if formulacao in ("A","C", "D", "E"):
                 p = p_n + p_ast
             elif formulacao=="B":
                 p=p_ast.copy()
@@ -1028,6 +1098,49 @@ class FEA(object):
         print(f"Tempo para execucao dos passos temporais: {tf - t2:.2f} s")
         print(f"Tempo total: {tf - t1:.2f} s")
         return resultados
+
+    def escoamento_direto_NS(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, u0=0, v0=0, p0=0, salvar_cada=10, debug=False):
+        '''Resolve um escoamento pelo metodo direto (resolvendo um unico sistema para u, v e p)
+        Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
+        Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
+        :param T: tempo total do escoamento
+        :param dt: medida do passo de tempo a cada iteracao
+        :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
+        '''
+        ##Definindo a estrutura da matriz de solucao
+        n = len(self.nos)
+        k = len(self.nos_o1)
+        m = 2 * n + k
+        ##Inicializando os vetores de solucao
+        u_n = np.ones((len(self.nos), 2), dtype=np.float64) * np.array([u0, v0])  # velocidade inicial
+        p_n = np.ones(self.nos_o1.shape, dtype=np.float64) * p0  # a ordem dos elementos da pressao deve ser menor que da velocidade
+
+        ##Aplicando condicoes de dirichlet nos valores iniciais
+        for (cont, funcao) in ux_dirichlet:
+            for no in cont:
+                u_n[no, 0] = funcao(self.x_nos[no])
+        for (cont, funcao) in uy_dirichlet:
+            for no in cont:
+                u_n[no, 1] = funcao(self.x_nos[no])
+        for (cont, funcao) in p_dirichlet:
+            for no in cont:
+                p_n[self.mascara_nos_o1[no]] = funcao(self.x_nos[no])
+
+        print(u"Montando as matrizes a serem usados pelo Método de Elementos Finitos")
+        t1 = time.process_time()
+        ##Montando as matrizes principais fora do loop
+        mat_lap_o1 = self.matriz_laplaciano_escalar(contornos_dirichlet=p_dirichlet, ordem=1)
+        mat_lap_o2 = self.matriz_laplaciano_escalar(contornos_dirichlet=ux_dirichlet, ordem=2)
+        # mat_integracao_o1 = self.monta_matriz(procedimento=self.procedimento_integracao_simples, contornos_dirichlet=p_dirichlet, ordem=1)
+        mat_integracao_o2 = self.monta_matriz(procedimento=self.procedimento_integracao_simples, contornos_dirichlet=ux_dirichlet, ordem=2)
+        mat_gradp_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=1)
+        mat_gradp_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=1)
+        mat_gradu_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
+        mat_gradu_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
+
+
+        ##u_ast
+
 
     def localiza_elemento(self, x, y):
         '''Dada um ponto, localiza em que elemento da malha ele se encontra'''
