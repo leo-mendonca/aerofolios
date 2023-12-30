@@ -1,8 +1,6 @@
 import time
 import math
 import os
-import tensorflow.sparse
-import tensorflow as tf
 
 import numpy as np
 
@@ -915,7 +913,7 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_NS(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, u0=0, v0=0, p0=0, salvar_cada=10, formulacao="A", debug=False):
+    def escoamento_IPCS_NS(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, u0=0, v0=0, p0=0, salvar_cada=10, formulacao="A", debug=False, verboso=False):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
@@ -1021,9 +1019,11 @@ class FEA(object):
                 elif formulacao=="E": ###Matrizes que aplicadas em um vetor w, calculam udw/dx+vdw/dy (o termo convectivo)
                     # mat_uddx=self.monta_matriz_convectiva(u_n[:,0], D_x,  nos_dirichlet=nos_dirich_ux)
                     # mat_vddy=self.monta_matriz_convectiva(u_n[:,1], D_y,  nos_dirichlet=nos_dirich_ux)
-                    mat_uddx=tf.sparse.reduce_sum(tensor_conv_Dx*u_n[:,0],axis=-1)
-                    mat_vddy=tf.sparse.reduce_sum(tensor_conv_Dy*u_n[:,1],axis=-1)
-                    A_u_ast=ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_uddx+mat_vddy, None], [None, matriz_bloco1 + A_dirich_uy+ mat_uddx+mat_vddy]], format="csr")
+                    mat_uddx=tf.sparse.reduce_sum(tensor_conv_Dx*u_n[:,0],axis=-1, output_is_sparse=True)
+                    mat_vddy=tf.sparse.reduce_sum(tensor_conv_Dy*u_n[:,1],axis=-1, output_is_sparse=True)
+                    mat_convectiva_tf=tf.sparse.add(mat_uddx, mat_vddy)
+                    mat_conv=ssp.coo_matrix((mat_convectiva_tf.values, (mat_convectiva_tf.indices[:,0], mat_convectiva_tf.indices[:,1])), shape=(len(self.nos), len(self.nos)))
+                    A_u_ast=ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_conv, None], [None, matriz_bloco1 + A_dirich_uy+ mat_conv]], format="csr")
 
             else:
                 vetor_convectivo=0
@@ -1065,13 +1065,14 @@ class FEA(object):
             u = u.reshape((2, len(self.nos))).T
             tl2 = time.process_time()
             print(f"Tempo de resolucao: {tl2 - tl1:.2f} s")
-            print(f"Velocidade media: {np.average(u, axis=0)}")
-            print(f"Velocidade maxima: {np.max(np.abs(u), axis=0)}")
-            print(f"Pressao media: {np.average(p)}")
-            print(f"Pressao maxima: {np.max(np.abs(p))}")
-            if formulacao=="D":
-                print(f"Termo convectivo maximo: {np.max(np.abs(vetor_convectivo))}")
-                print(f"Termo difusivo maximo: {np.max(np.abs(vetor_difusivo))}")
+            if verboso:
+                print(f"Velocidade media: {np.average(u, axis=0)}")
+                print(f"Velocidade maxima: {np.max(np.abs(u), axis=0)}")
+                print(f"Pressao media: {np.average(p)}")
+                print(f"Pressao maxima: {np.max(np.abs(p))}")
+                if formulacao=="D":
+                    print(f"Termo convectivo maximo: {np.max(np.abs(vetor_convectivo))}")
+                    print(f"Termo difusivo maximo: {np.max(np.abs(vetor_difusivo))}")
 
             if not solucao_analitica is None:
                 if not regiao_analitica is None:
@@ -1093,53 +1094,11 @@ class FEA(object):
 
             u_n = u.copy()
             p_n = p.copy()
-        tf=time.process_time()
+        tfinal=time.process_time()
         print(f"Tempo para montagem das matrizes: {t2 - t1:.2f} s")
-        print(f"Tempo para execucao dos passos temporais: {tf - t2:.2f} s")
-        print(f"Tempo total: {tf - t1:.2f} s")
+        print(f"Tempo para execucao dos passos temporais: {tfinal - t2:.2f} s")
+        print(f"Tempo total: {tfinal - t1:.2f} s")
         return resultados
-
-    def escoamento_direto_NS(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, u0=0, v0=0, p0=0, salvar_cada=10, debug=False):
-        '''Resolve um escoamento pelo metodo direto (resolvendo um unico sistema para u, v e p)
-        Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
-        Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
-        :param T: tempo total do escoamento
-        :param dt: medida do passo de tempo a cada iteracao
-        :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
-        '''
-        ##Definindo a estrutura da matriz de solucao
-        n = len(self.nos)
-        k = len(self.nos_o1)
-        m = 2 * n + k
-        ##Inicializando os vetores de solucao
-        u_n = np.ones((len(self.nos), 2), dtype=np.float64) * np.array([u0, v0])  # velocidade inicial
-        p_n = np.ones(self.nos_o1.shape, dtype=np.float64) * p0  # a ordem dos elementos da pressao deve ser menor que da velocidade
-
-        ##Aplicando condicoes de dirichlet nos valores iniciais
-        for (cont, funcao) in ux_dirichlet:
-            for no in cont:
-                u_n[no, 0] = funcao(self.x_nos[no])
-        for (cont, funcao) in uy_dirichlet:
-            for no in cont:
-                u_n[no, 1] = funcao(self.x_nos[no])
-        for (cont, funcao) in p_dirichlet:
-            for no in cont:
-                p_n[self.mascara_nos_o1[no]] = funcao(self.x_nos[no])
-
-        print(u"Montando as matrizes a serem usados pelo Método de Elementos Finitos")
-        t1 = time.process_time()
-        ##Montando as matrizes principais fora do loop
-        mat_lap_o1 = self.matriz_laplaciano_escalar(contornos_dirichlet=p_dirichlet, ordem=1)
-        mat_lap_o2 = self.matriz_laplaciano_escalar(contornos_dirichlet=ux_dirichlet, ordem=2)
-        # mat_integracao_o1 = self.monta_matriz(procedimento=self.procedimento_integracao_simples, contornos_dirichlet=p_dirichlet, ordem=1)
-        mat_integracao_o2 = self.monta_matriz(procedimento=self.procedimento_integracao_simples, contornos_dirichlet=ux_dirichlet, ordem=2)
-        mat_gradp_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=1)
-        mat_gradp_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=1)
-        mat_gradu_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
-        mat_gradu_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
-
-
-        ##u_ast
 
 
     def localiza_elemento(self, x, y):

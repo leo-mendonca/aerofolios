@@ -292,7 +292,7 @@ if __name__ == "__main__":
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=True, formulacao="A")
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=False, formulacao="A")
     # plt.show(block=True)
-    teste_poiseuille(0.3, 0, 1, 0.01, 2, True, "E")
+    teste_poiseuille(0.1, 0, 1, 0.01, 2, True, "E")
     plt.show(block=True)
     for Re in (0.01,10,100,400,1000):
         teste_cavidade(tamanho=0.05, p0=0, executa=True, dt=0.01, T=30, Re=Re, formulacao="A", debug=True)
