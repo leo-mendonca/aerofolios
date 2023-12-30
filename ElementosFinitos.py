@@ -865,9 +865,10 @@ class FEA(object):
         :param T: tempo total do escoamento
         :param dt: medida do passo de tempo a cada iteracao
         :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
-        :param formulacao: str. Formulacao a ser usada para o calculo de u e p. Pode ser "A", "B" ou "C". "A": calculo de u* considerando a pressao do passo anterior. "B": calculo de u* sem considerar a pressao. "C": igual ao A, mas nao inclui o termo convectivo (equacao de STokes)
+        :param formulacao: str. Formulacao a ser usada para o calculo de u e p. Pode ser "A", "B" ou "C".
+            "A": calculo de u* considerando a pressao do passo anterior. "B": calculo de u* sem considerar a pressao. "C": igual ao A, mas nao inclui o termo convectivo (equacao de STokes); "D": igual ao A, mas considera o termo difusivo so do passo de tempo anterior
         '''
-        if formulacao in ("A", "B"):
+        if formulacao in ("A", "B", "D"):
             conveccao=True
         elif formulacao=="C":
             conveccao=False
@@ -904,7 +905,11 @@ class FEA(object):
         mat_gradu_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
         mat_gradu_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
         ##u_ast
-        matriz_bloco1 = mat_integracao_o2 / dt - mat_lap_o2 / Re
+        if formulacao in ("A","B","C"):
+            matriz_bloco1 = mat_integracao_o2 / dt - mat_lap_o2 / Re
+        elif formulacao=="D":
+            matriz_bloco1 = mat_integracao_o2 / dt - (1/2)*mat_lap_o2 / Re
+
         A_dirich_ux, b_dirich_ux = self.monta_matriz_dirichlet(ux_dirichlet, ordem=2)
         A_dirich_uy, b_dirich_uy = self.monta_matriz_dirichlet(uy_dirichlet, ordem=2)
         nos_dirich_ux=np.concatenate([cont for (cont, funcao) in ux_dirichlet])
@@ -912,7 +917,7 @@ class FEA(object):
         A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
         ##p_ast
         A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
-        if formulacao in ("A","C"):
+        if formulacao in ("A","C", "D"):
             b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
         elif formulacao=="B": pass
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
@@ -952,6 +957,7 @@ class FEA(object):
                 vdvdy=calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
                 termo_convectivo_y=udvdx+vdvdy
                 vetor_convectivo=np.concatenate((termo_convectivo_x, termo_convectivo_y))
+
             else:
                 vetor_convectivo=0
             if formulacao=="A":
@@ -962,6 +968,10 @@ class FEA(object):
             elif formulacao=="C":
                 vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
                 b_u_ast = vetor_un / dt - vetor_gradp + vetor_dirich_u
+            elif formulacao=="D":
+                vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
+                vetor_difusivo= np.concatenate(((mat_lap_o2/Re) @ u_n[:, 0], (mat_lap_o2/Re) @ u_n[:, 1]))
+                b_u_ast = vetor_un / dt - vetor_gradp - vetor_convectivo + (1/2)*vetor_difusivo + vetor_dirich_u
             u_ast = ssp.linalg.spsolve(A_u_ast,b_u_ast)
 
             u_ast = u_ast.reshape((2, len(self.nos))).T
@@ -972,7 +982,7 @@ class FEA(object):
             p_ast = ssp.linalg.spsolve(A_p, b_p)
 
             ##Calculando p_n+1
-            if formulacao in ("A","C"):
+            if formulacao in ("A","C", "D"):
                 p = p_n + p_ast
             elif formulacao=="B":
                 p=p_ast.copy()
@@ -986,7 +996,13 @@ class FEA(object):
             tl2 = time.process_time()
             print(f"Tempo de resolucao: {tl2 - tl1:.2f} s")
             print(f"Velocidade media: {np.average(u, axis=0)}")
-            print(f"Velocidade maxima: {np.max(u, axis=0)}")
+            print(f"Velocidade maxima: {np.max(np.abs(u), axis=0)}")
+            print(f"Pressao media: {np.average(p)}")
+            print(f"Pressao maxima: {np.max(np.abs(p))}")
+            if formulacao=="D":
+                print(f"Termo convectivo maximo: {np.max(np.abs(vetor_convectivo))}")
+                print(f"Termo difusivo maximo: {np.max(np.abs(vetor_difusivo))}")
+
             if not solucao_analitica is None:
                 if not regiao_analitica is None:
                     pontos_an = self.nos[regiao_analitica(self.x_nos)]  # separa apenas os nos selecionados para avaliar a solucao analitica
