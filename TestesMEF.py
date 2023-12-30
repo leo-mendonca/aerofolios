@@ -186,7 +186,9 @@ def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formula
         ]
         vertice_pressao = np.where(np.logical_and(Problema.x_nos[:, 0] == 1, Problema.x_nos[:, 1] == 0))[0]
         p_dirichlet = [(vertice_pressao, lambda x: p0), ]
-        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, formulacao=formulacao, debug=debug)
+        if debug: u0=1
+        else: u0=0
+        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, formulacao=formulacao, debug=debug, u0=u0)
         nome_diretorio=cria_diretorio(nome_diretorio)
         nome_arquivo=os.path.join(nome_diretorio, f" cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
         salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo)
@@ -214,6 +216,12 @@ def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formula
     (x1, y1), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=os.path.join(nome_diretorio, "U.png"))
     (x1, y1), mapa_v = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade vertical", path_salvar=os.path.join(nome_diretorio, "V.png"))
     (x1, y1), mapa_p = RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Pressão", path_salvar=os.path.join(nome_diretorio, "P.png"))
+    op_conveccao_x = lambda x,l, u: Problema.conveccao_localizado(x,u,u[:,0], l, ordem=2)
+    op_conveccao_y = lambda x,l, u: Problema.conveccao_localizado(x,u,u[:,1], l, ordem=2)
+    (x1, y1), mapa_conveccao_x = RepresentacaoEscoamento.mapa_de_cor(Problema, u, ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Convecção da velocidade horizontal", path_salvar=os.path.join(nome_diretorio, "Conveccao U.png"), operacao=op_conveccao_x)
+    (x1, y1), mapa_conveccao_y = RepresentacaoEscoamento.mapa_de_cor(Problema, u, ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Convecção da velocidade vertical", path_salvar=os.path.join(nome_diretorio, "Conveccao V.png"), operacao=op_conveccao_y)
+
+
     iniciais = np.linspace([0.5, 0.1], [0.5, 0.9], 10)
     ##Plotando as linhas de corrente para um lado e para o outro
     fig, eixo=plt.subplots()
@@ -228,7 +236,7 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
     valores_Re=(0.01,10,100,400,1000, "inf")
     dframe_erros=pd.DataFrame(index=valores_Re,columns=["u_med","u_rms","u_max","v_med","v_rms","v_max"], dtype=np.float64)
     roda_cores={0.01: "b", 10: "g", 100: "r", 400: "c", 1000: "m", "inf":"y"}
-    path_salvar=os.path.join("Saida","Cavidade",f"Comparacao h={h} dt={dt} T={T} {formulacao}")
+    path_salvar=os.path.join("Saida","Cavidade","Comparacao",f"Comparacao h={h} dt={dt} T={T} {formulacao}")
     if plota:
         fig_u, eixo_u=plt.subplots()
         fig_v, eixo_v=plt.subplots()
@@ -244,7 +252,7 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
         eixo_v.set_ylim(-1,1)
     for Re in valores_Re:
         try:
-            arquivo_resultados=os.path.join("Saida","Cavidade",f"cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}.zip")
+            arquivo_resultados=os.path.join("Saida","Cavidade",f"Cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}",f" cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}.zip")
             Problema, u, p, nome_malha = carregar_resultados(arquivo_resultados)
             dframe_ref = pd.read_csv(arquivo_referencia)
             if Re=="inf":
@@ -286,21 +294,25 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
 
 if __name__ == "__main__":
     # teste_poiseuille(tamanho=0.1, p0=0,  executa=True, dt=0.01, T=2, Re=1, formulacao="A")
-    # teste_cavidade(tamanho=0.05,  dt=0.01, T=1, Re=1000, formulacao="A", executa=True, debug=False)
+    # teste_cavidade(tamanho=0.02,  dt=0.01, T=30, Re=10, formulacao="E", executa=True, debug=False)
+    # teste_cavidade(tamanho=0.05, dt=0.01,T=20,Re=0.01,executa=False,formulacao="E")
     # plt.show(block=True)
     # teste_cavidade(tamanho=0.01, p0=0,  executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=True, formulacao="A")
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=False, formulacao="A")
     # plt.show(block=True)
-    teste_poiseuille(0.1, 0, 1, 0.01, 2, True, "E")
-    plt.show(block=True)
-    for Re in (0.01,10,100,400,1000):
-        teste_cavidade(tamanho=0.05, p0=0, executa=True, dt=0.01, T=30, Re=Re, formulacao="A", debug=True)
+    # teste_poiseuille(0.1, 0, 1, 0.01, 2, True, "E")
+    # plt.show(block=True)
+    # teste_cavidade(tamanho=0.1, p0=0, executa=True, dt=0.01, T=30, Re=1, formulacao="F", debug=False)
+    for Re in (100,400,0.01,10,1000):
+        teste_cavidade(tamanho=0.02, p0=0, executa=True, dt=0.01, T=30, Re=Re, formulacao="F", debug=False)
         plt.close("all")
+    erros = compara_cavidade_ref(h=0.02, dt=0.01, T=30, formulacao="F", plota=True)
+    plt.show(block=True)
     # for Re in (0.01,10,100,400,1000):
     #     teste_cavidade(tamanho=0.03, p0=0, executa=True, dt=0.01, T=10, Re=Re, formulacao="A", debug=True)
     #     plt.close("all")
-    erros=compara_cavidade_ref(h=0.05, dt=0.01, T=30, formulacao="A", plota=True)
+    erros=compara_cavidade_ref(h=0.05, dt=0.01, T=20, formulacao="E", plota=True)
     plt.show(block=True)
     for Re in (400,1000):
         teste_cavidade(tamanho=0.01, p0=0, executa=True, dt=0.01, T=1, Re=Re, formulacao="A")
@@ -309,5 +321,5 @@ if __name__ == "__main__":
     plt.show(block=True)
     plt.close("all")
     # teste_forca(n=50, tamanho=0.3, debug=False, executa=False)
-    plt.show(block=True)
+    plt.show(block=False)
     plt.show()

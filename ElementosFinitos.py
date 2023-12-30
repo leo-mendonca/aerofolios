@@ -182,6 +182,14 @@ def tensor_pertencimento(elementos):
     tensor=tf.sparse.SparseTensor(posicao, valor, dense_shape=(n_nos, elementos.shape[0], elementos.shape[1]))
     return tensor
 
+def matriz_diagonal(u):
+    '''Escreve uma matriz esparsa diagonal que tem os valores de u na diagonal'''
+    n=u.shape[0]
+    linhas=np.arange(n)
+    colunas=linhas
+    valores=u
+    return ssp.coo_matrix((valores, (linhas, colunas)), shape=(n,n))
+
 
 
 def calcula_termo_convectivo(produtos, tensor_convectivo, tensor_pertencimento, nos_dirichlet=[]):
@@ -457,6 +465,26 @@ class FEA(object):
                 fpi,
             ])
             valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
+        elif ordem_i == 2 and ordem_j == 2:
+            aj,bj,cj,dj,ej,fj=self.coefs_o2[l,pos_j]
+            api,bpi,cpi,dpi,epi,fpi=self.coefs_o2_alfa[pos_i]
+            q=bj
+            r=2*dj*x[1]+fj*y[1]
+            s=2*dj*x[2]+fj*y[2]
+            rho=np.array([
+                q*api,
+                q*bpi+r*api,
+                q*cpi+s*api,
+                q*dpi+r*bpi,
+                q*epi+s*cpi,
+                q*fpi+r*cpi+s*bpi,
+                r*dpi,
+                s*epi,
+                r*fpi+s*dpi,
+                r*epi+s*fpi,
+            ])
+            valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
+
         else:
             raise NotImplementedError(f"Nao implementado calculo da derivada com teste ordem {ordem_i} e tentativa ordem {ordem_j}")
 
@@ -488,6 +516,25 @@ class FEA(object):
                 dpi,
                 epi,
                 fpi,
+            ])
+            valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
+        elif ordem_i == 2 and ordem_j == 2:
+            aj,bj,cj,dj,ej,fj=self.coefs_o2[l,pos_j]
+            api,bpi,cpi,dpi,epi,fpi=self.coefs_o2_alfa[pos_i]
+            q=cj
+            r=2*ej*y[1]+fj*x[1]
+            s=2*ej*y[2]+fj*x[2]
+            rho=np.array([
+                q*api,
+                q*bpi+r*api,
+                q*cpi+s*api,
+                q*dpi+r*bpi,
+                q*epi+s*cpi,
+                q*fpi+r*cpi+s*bpi,
+                r*dpi,
+                s*epi,
+                r*fpi+s*dpi,
+                r*epi+s*fpi,
             ])
             valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
         else:
@@ -700,6 +747,7 @@ class FEA(object):
 
     def monta_matriz_convectiva_ao_vivo(self, u_n_x, tensor_convectivo,  nos_dirichlet=[]):
         '''Monta a matriz que, aplicada no vetor u de velocidades em uma dada direcao, produz o vetor da integracao do tertmo convectivo na equacao'''
+        raise DeprecationWarning("Nao usar essa funcao, usar monta_tensor_matriz_convectiva")
         p=self.elementos.shape[1] ##p=6
         n_nos=len(self.nos)
         n_elem=len(self.elementos)
@@ -923,7 +971,7 @@ class FEA(object):
         :param formulacao: str. Formulacao a ser usada para o calculo de u e p. Pode ser "A", "B" ou "C".
             "A": calculo de u* considerando a pressao do passo anterior. "B": calculo de u* sem considerar a pressao. "C": igual ao A, mas nao inclui o termo convectivo (equacao de STokes); "D": igual ao A, mas considera o termo difusivo so do passo de tempo anterior
         '''
-        if formulacao in ("A", "B", "D","E"):
+        if formulacao in ("A", "B", "D","E","F"):
             conveccao=True
         elif formulacao=="C":
             conveccao=False
@@ -959,8 +1007,10 @@ class FEA(object):
         mat_gradp_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=1)
         mat_gradu_x = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
         mat_gradu_y = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=p_dirichlet, ordem_teste=1, ordem_tentativa=2)
+        mat_gradu_x_o2 = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=2)
+        mat_gradu_y_o2 = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=2)
         ##u_ast
-        if formulacao in ("A","B","C", "E"):
+        if formulacao in ("A","B","C", "E","F"):
             matriz_bloco1 = mat_integracao_o2 / dt - mat_lap_o2 / Re
         elif formulacao=="D":
             matriz_bloco1 = mat_integracao_o2 / dt - (1/2)*mat_lap_o2 / Re
@@ -972,7 +1022,7 @@ class FEA(object):
         A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
         ##p_ast
         A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
-        if formulacao in ("A","C", "D", "E"):
+        if formulacao in ("A","C", "D", "E","F"):
             b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
         elif formulacao=="B": pass
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
@@ -992,6 +1042,7 @@ class FEA(object):
         resultados = {}  # Dicionario contendo os resultados da simulacao para alguns passos de tempo
 
         cont_salvar=0 #quando chega a 10, salvamos o valor atual de u e p
+        tempos_salvos=[]
         tempos = np.arange(0, T + dt, dt)
         for t in tempos:
             print(f"Resolvendo para t={t}")
@@ -1024,6 +1075,11 @@ class FEA(object):
                     mat_convectiva_tf=tf.sparse.add(mat_uddx, mat_vddy)
                     mat_conv=ssp.coo_matrix((mat_convectiva_tf.values, (mat_convectiva_tf.indices[:,0], mat_convectiva_tf.indices[:,1])), shape=(len(self.nos), len(self.nos)))
                     A_u_ast=ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_conv, None], [None, matriz_bloco1 + A_dirich_uy+ mat_conv]], format="csr")
+                elif formulacao=="F":
+                    mat_uddx=matriz_diagonal(u_n[:,0])@mat_gradu_x_o2
+                    mat_vddy=matriz_diagonal(u_n[:,1])@mat_gradu_y_o2
+                    mat_conv=mat_uddx+mat_vddy
+                    A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_conv, None], [None, matriz_bloco1 + A_dirich_uy + mat_conv]], format="csr")
 
             else:
                 vetor_convectivo=0
@@ -1039,7 +1095,7 @@ class FEA(object):
                 vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
                 vetor_difusivo= np.concatenate(((mat_lap_o2/Re) @ u_n[:, 0], (mat_lap_o2/Re) @ u_n[:, 1]))
                 b_u_ast = vetor_un / dt - vetor_gradp - vetor_convectivo + (1/2)*vetor_difusivo + vetor_dirich_u
-            elif formulacao=="E":
+            elif formulacao in ("E","F"):
                 vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
                 b_u_ast = vetor_un / dt - vetor_gradp + vetor_dirich_u
             u_ast = ssp.linalg.spsolve(A_u_ast,b_u_ast)
@@ -1052,7 +1108,7 @@ class FEA(object):
             p_ast = ssp.linalg.spsolve(A_p, b_p)
 
             ##Calculando p_n+1
-            if formulacao in ("A","C", "D", "E"):
+            if formulacao in ("A","C", "D", "E","F"):
                 p = p_n + p_ast
             elif formulacao=="B":
                 p=p_ast.copy()
@@ -1065,11 +1121,11 @@ class FEA(object):
             u = u.reshape((2, len(self.nos))).T
             tl2 = time.process_time()
             print(f"Tempo de resolucao: {tl2 - tl1:.2f} s")
+            print(f"Pressao maxima: {np.max(np.abs(p))}")
             if verboso:
                 print(f"Velocidade media: {np.average(u, axis=0)}")
                 print(f"Velocidade maxima: {np.max(np.abs(u), axis=0)}")
                 print(f"Pressao media: {np.average(p)}")
-                print(f"Pressao maxima: {np.max(np.abs(p))}")
                 if formulacao=="D":
                     print(f"Termo convectivo maximo: {np.max(np.abs(vetor_convectivo))}")
                     print(f"Termo difusivo maximo: {np.max(np.abs(vetor_difusivo))}")
@@ -1090,6 +1146,15 @@ class FEA(object):
                 casas_decimais= int(np.ceil(-np.log10(dt)))
                 t_nominal=np.round(t, casas_decimais)
                 resultados[t_nominal] = {"u": u, "u*": u_ast, "p": p, "p*": p_ast}
+                tempos_salvos.append(t_nominal)
+                if len(tempos_salvos)>=2:
+                    dif_u=resultados[tempos_salvos[-1]]["u"]-resultados[tempos_salvos[-2]]["u"]
+                    dif_p=resultados[tempos_salvos[-1]]["p"]-resultados[tempos_salvos[-2]]["p"]
+                    if np.all(np.isclose(dif_u, 0, atol=1E-3)) and np.all(np.isclose(dif_p, 0, atol=1E-3)):
+                        print(f"Convergencia atingida em t={t_nominal}")
+                        resultados[T]=resultados[tempos_salvos[-1]]
+                        break
+
             cont_salvar+=1
 
             u_n = u.copy()
@@ -1170,6 +1235,36 @@ class FEA(object):
         else:
             raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
         return soma
+
+    def conveccao_localizado(self, x, u1, gama, elemento, ordem=2):
+        '''Calcula o termo convectivo para um ponto (x,y) qualquer no elemento especificado
+        :param x: array_like N×2. Array de pares de coordenadas do ponto em que se deseja calcular a funcao de forma
+        :param u1: array_like N×2 ou N×1. Array de valores da solucao nos nos da malha
+        :param gama: array_like N×2 ou N×1. Array de valores da solucao nos nos da malha
+        :param ordem: int. Ordem do elemento em que se deseja interpolar u2
+        '''
+        if ordem == 2:
+            elementos = self.elementos
+            nos = elementos[elemento]
+            p=6
+        else:
+            raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
+        l=elemento
+        # if len(x.shape) == 1:  # Nesse caso, foi passado um unico ponto (x,y)
+        #     formato_saida=(2,)
+        # else:  # nesse caso, foi passado um array de pontos [(x1,y1),(x2,y2),...]
+        #     formato_saida = (len(x), 2)
+        u1_elemento=u1[elementos[l]]
+        gama_elemento=gama[elementos[l]]
+        grads=np.sum([self.grad_N_rel(q,l,x,ordem)*gama_elemento[q] for q in range(6)],axis=0)
+        if len(grads.shape)==1: grads=grads.reshape((1,grads.shape[0]))
+        conv_x=np.sum([u1_elemento[q,0]*grads[:,0] for q in range(p)],axis=0)
+        conv_y=np.sum([u1_elemento[q,1]*grads[:,1] for q in range(p)],axis=0)
+        conveccoes=conv_x+conv_y
+        return conveccoes
+
+
+
 
     def calcula_forcas(self, p, u, contorno="af", Re=1., debug=True):
         '''Calcula as forcas de arrasto e sustentacao'''

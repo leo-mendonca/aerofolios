@@ -54,25 +54,29 @@ def plotar_perfis(Problema, resultados, t, lim_x=(0,5)):
     eixo.legend()
     return
 
-def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_grade=None, y_grade=None, local_grade=None, plota=True, titulo="", path_salvar=None, aspecto=(6,4)):
+def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_grade=None, y_grade=None, local_grade=None, plota=True, titulo="", path_salvar=None, aspecto=(6,4), operacao=None):
     '''
     :param Problema:
     :param variavel: ux, uy ou p
     :param ordem: ordem da funcao de interpolacao da variavel
     :param resolucao: resolucao espacial, que se supoe ser igual para x e y
     :param areas_excluidas: lista de funcoes que retornam True para pontos que devem ser excluidos do mapa de cor
+    :param operacao: operacao a ser aplicada no mapa de cor, em vez de simplesmente interpolar (e.g. calcular a conveccao)
     :return:
     '''
+
     if not (x_grade is None or y_grade is None or local_grade is None):
         assert local_grade.shape==(len(x_grade),len(y_grade))
+        if operacao is None:
+            operacao = lambda r, l, var: Problema.interpola_localizado(r, var, l, ordem=ordem)
         x,y=x_grade,y_grade
         pontos=np.dstack(np.meshgrid(x_grade,y_grade,indexing="ij"))
         mapa = np.zeros((len(x_grade), len(y_grade)), dtype=np.float64)
         for i in range(len(x_grade)) :
             for j in range(len(y_grade)) :
-                p = pontos[i,j]
-                if not any([f(p) for f in areas_excluidas]):
-                    mapa[i,j]=Problema.interpola_localizado(p, variavel, local_grade[i,j], ordem=ordem)
+                r = pontos[i,j]
+                if not any([f(r) for f in areas_excluidas]):
+                    mapa[i,j]=operacao(r, local_grade[i,j],variavel)
                 else :
                     mapa[i, j] = np.nan
     else:
@@ -81,10 +85,10 @@ def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_
         mapa=np.zeros((len(x),len(y)),dtype=np.float64)
         for i in range(len(x)):
             for j in range(len(y)):
-                p=np.array([x[i],y[j]])
-                if not any([f(p) for f in areas_excluidas]):
+                r=np.array([x[i],y[j]])
+                if not any([f(r) for f in areas_excluidas]):
                     try:
-                        mapa[i,j]=Problema.interpola(p, variavel, ordem=ordem)
+                        mapa[i,j]=Problema.interpola(r, variavel, ordem=ordem)
                     except ElementosFinitos.ElementoNaoEncontrado:
                         mapa[i,j]=np.nan
                 else:
