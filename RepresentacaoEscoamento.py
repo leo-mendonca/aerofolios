@@ -103,7 +103,7 @@ def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_
     return (x,y),mapa
 
 
-def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_excluidas=[], plota=True, eixo=None):
+def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_excluidas=[], plota=True, eixo=None, path_salvar=None):
     '''
     :param Problema:
     :param u: vetor da velocidade nos nos da malha
@@ -145,6 +145,8 @@ def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_exclu
         eixo.set_xlim(Problema.x_min,Problema.x_max)
         eixo.set_ylim(Problema.y_min,Problema.y_max)
         eixo.set_aspect("equal")
+        if not path_salvar is None:
+            plt.savefig(path_salvar, dpi=300, bbox_inches="tight")
 
     return linhas
 

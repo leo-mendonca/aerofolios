@@ -1,56 +1,12 @@
-import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
-
 import AerofolioFino
 import Malha
 import ElementosFinitos
 import RepresentacaoEscoamento
 import time
 import os
-import pickle
-import zipfile
 from Definicoes import *
+from Salvamento import carregar_resultados, cria_diretorio, salvar_resultados
 
-
-def salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo):
-    '''Salva o resultado dop caso estacionario em um arquivo comprimido .zip.
-    Faz par com carregar_resultados'''
-    str_tags="\n".join([f"{k}:{v}" for k,v in tag_fis.items()])
-    ultimo_resultado=max(resultados.keys())
-    u,p=resultados[ultimo_resultado]["u"],resultados[ultimo_resultado]["p"]
-    str_u=",".join(u[:,0].astype(str))
-    str_v=",".join(u[:,1].astype(str))
-    str_p=",".join(p.astype(str))
-
-    with zipfile.ZipFile(nome_arquivo, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as f:
-        f.write(nome_malha, os.path.basename(nome_malha))
-        f.writestr("tag_fis.csv", str_tags)
-        f.writestr("u.csv", str_u)
-        f.writestr("v.csv", str_v)
-        f.writestr("p.csv", str_p)
-        # f.writestr("Problema.pkl", pickle.dumps(Problema))
-        # f.writestr("resultados.pkl", pickle.dumps(resultados))
-
-def carregar_resultados(nome_arquivo):
-    '''Carrega o resultado de um caso estacionario a partir de um arquivo comprimido .zip.
-    Faz par com salvar_resultados'''
-    with zipfile.ZipFile(nome_arquivo, "r") as f:
-        nome_malha=f.namelist()[0]
-        f.extract(nome_malha, path="Malha")
-        tag_fis=f.read("tag_fis.csv").decode("utf-8")
-        tag_fis=dict([linha.split(":") for linha in tag_fis.split("\n")])
-        tag_fis={k:int(v) for k,v in tag_fis.items()}
-        u=f.read("u.csv").decode("utf-8")
-        u=np.array(u.split(","), dtype=float)
-        v=f.read("v.csv").decode("utf-8")
-        v=np.array(v.split(","), dtype=float)
-        p=f.read("p.csv").decode("utf-8")
-        p=np.array(p.split(","), dtype=float)
-    nome_malha=os.path.join("Malha", nome_malha)
-    u=np.stack([u,v], axis=1)
-    fea=ElementosFinitos.FEA(nome_malha, tag_fis)
-    return fea, u, p, nome_malha
 
 def teste_cilindro(n=50):
     cilindro = AerofolioFino.Cilindro(.5, 0, 1)
@@ -87,7 +43,7 @@ def numeracao_nos():
     plt.show(block=False)
     return
 
-def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao="A"):
+def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao="A", T=3, dt=0.01, Re=1.):
     cilindro = AerofolioFino.Cilindro(.5, 0, 1)
     nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n, tamanho=tamanho)
     Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
@@ -104,14 +60,15 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
         (Problema.nos_cont["af"], lambda x: 0.),
     ]
     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: p0),]
-    T=3
-    dt=0.01
-    Re=1
+
+    nome_diretorio = f"Saida/Cilindro/Cilindro n={n} h={tamanho} dt={dt} Re={Re} {formulacao}"
     if executa:
+        nome_diretorio = cria_diretorio(nome_diretorio)
+        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} {formulacao}.zip")
         resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., p0=p0)
         # with open("Picles/resultados_forca.pkl", "wb") as f:
         #     pickle.dump((Problema, resultados), f)
-        salvar_resultados(nome_malha, tag_fis, resultados, f"Saida/Cilindro n={n} h={tamanho} dt={dt} Re={Re} {formulacao}.zip")
+        salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo)
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u = resultados[T]["u"]
         p = resultados[T]["p"]
@@ -119,7 +76,8 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
 
         # with open("Picles/resultados_forca.pkl", "rb") as f:
         #     Problema, resultados = pickle.load(f)
-        Problema, u, p, nome_malha = carregar_resultados(f"Saida/Cilindro n={n} h={tamanho} dt={dt} Re={Re} {formulacao}.zip")
+        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} {formulacao}.zip")
+        Problema, u, p, nome_malha = carregar_resultados(nome_arquivo)
 
     forca, x, tensao=Problema.calcula_forcas(p,u, debug=debug)
     F=np.sum(forca,axis=0)
@@ -141,15 +99,16 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
     x = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
     y = np.arange(Problema.y_min, Problema.y_max + resolucao, resolucao)
     localizacao=Problema.localiza_grade(x,y)
-    (x,y),mapa_p=RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Pressão")
-    (x, y), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:,0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal")
-    (x, y), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade vertical")
+    (x,y),mapa_p=RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Pressão", path_salvar=os.path.join(nome_diretorio,"P.png"))
+    (x, y), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:,0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=os.path.join(nome_diretorio,"U.png"))
+    (x, y), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade vertical", path_salvar=os.path.join(nome_diretorio,"V.png"))
     iniciais=np.linspace([Problema.x_min, Problema.y_min+0.1], [Problema.x_min, Problema.y_max-0.1], 20)
-    linhas=RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=iniciais, resolucao=tamanho/10)
+    linhas=RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=iniciais, resolucao=tamanho/10, path_salvar=os.path.join(nome_diretorio,"Correntes.png"))
     plt.show(block=False)
     return forca,x
 
-def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1., dt=0.05, T=3., executa=True, formulacao="A"):
+
+def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, formulacao="A"):
 
     if executa :
         nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", tamanho, (5, 1))
@@ -172,7 +131,7 @@ def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1., dt=0.05, T=3., ex
         resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, formulacao=formulacao)
         # with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "wb") as f :
         #     pickle.dump((Problema, resultados), f)
-        salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida","Poiseuille",f"Poiseuille h={tamanho} dt={dt} Re={Re} {formulacao}.zip"))
+        salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida", "Poiseuille", f"Poiseuille h={tamanho} dt={dt} Re={Re} {formulacao}.zip"))
         RepresentacaoEscoamento.plotar_perfis(Problema, resultados, T)
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u=resultados[T]["u"]
@@ -180,7 +139,7 @@ def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1., dt=0.05, T=3., ex
     else :
         # with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "rb") as f :
         #     Problema, resultados = pickle.load(f)
-        Problema, u, p, nome_malha = carregar_resultados(os.path.join("Saida","Poiseuille",f"Poiseuille h={tamanho} dt={dt} Re={Re} {formulacao}.zip"))
+        Problema, u, p, nome_malha = carregar_resultados(os.path.join("Saida", "Poiseuille", f"Poiseuille h={tamanho} dt={dt} Re={Re} {formulacao}.zip"))
 
     t0 = time.process_time()
     t1 = time.process_time()
@@ -198,7 +157,7 @@ def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1., dt=0.05, T=3., ex
     print(f"Mapa de cor calculado em {t3-t2:.4f} s")
     t4=time.process_time()
     pontos_inicio=np.linspace([0.,0.1],[0.,0.9], 9)
-    correntes=RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=pontos_inicio, resolucao=resolucao)
+    correntes=RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=pontos_inicio, resolucao=resolucao, path_salvar=path_salvar+" correntes.png")
     t5=time.process_time()
     print(f"Linhas de corrente calculadas em {t5-t4:.4f} s")
 
@@ -208,6 +167,8 @@ def teste_poiseuille(tamanho=0.1, p0=0, conveccao=True, Re=1., dt=0.05, T=3., ex
 
 def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formulacao="A", debug=False):
 
+
+    nome_diretorio=os.path.join("Saida","Cavidade",f"Cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}")
     if executa :
         nome_malha, tag_fis = Malha.malha_quadrada("cavidade", tamanho)
         Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
@@ -226,7 +187,9 @@ def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formula
         vertice_pressao = np.where(np.logical_and(Problema.x_nos[:, 0] == 1, Problema.x_nos[:, 1] == 0))[0]
         p_dirichlet = [(vertice_pressao, lambda x: p0), ]
         resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, formulacao=formulacao, debug=debug)
-        salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida","Cavidade",f"cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip"))
+        nome_diretorio=cria_diretorio(nome_diretorio)
+        nome_arquivo=os.path.join(nome_diretorio, f" cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
+        salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo)
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u=resultados[T]["u"]
         p=resultados[T]["p"]
@@ -239,23 +202,24 @@ def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formula
         # with open(os.path.join("Picles", f"resultados cavidade.pkl h={tamanho} dt={dt} Re={Re} {formulacao}"), "wb") as f :
         #     pickle.dump((Problema, resultados), f)
     else :
-        Problema, u, p, nome_malha = carregar_resultados(os.path.join("Saida", "Cavidade",f"cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip"))
+        nome_arquivo = os.path.join(nome_diretorio, f" cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
+        Problema, u, p, nome_malha = carregar_resultados(nome_arquivo)
         # with open(os.path.join("Picles", f"resultados cavidade.pkl h={tamanho} dt={dt} Re={Re} {formulacao}"), "rb") as f :
         #     Problema, resultados = pickle.load(f)
     resolucao = tamanho / 3
     x = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
     y = np.arange(Problema.y_min, Problema.y_max + resolucao, resolucao)
     localizacao = Problema.localiza_grade(x, y)
-    path_salvar = os.path.join("Saida", "Cavidade", f"Cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}")
-    (x1, y1), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=path_salvar + " u.png")
-    (x1, y1), mapa_v = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade vertical", path_salvar=path_salvar + " v.png")
-    (x1, y1), mapa_p = RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Pressão", path_salvar=path_salvar + " p.png")
+
+    (x1, y1), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=os.path.join(nome_diretorio, "U.png"))
+    (x1, y1), mapa_v = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade vertical", path_salvar=os.path.join(nome_diretorio, "V.png"))
+    (x1, y1), mapa_p = RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Pressão", path_salvar=os.path.join(nome_diretorio, "P.png"))
     iniciais = np.linspace([0.5, 0.1], [0.5, 0.9], 10)
     ##Plotando as linhas de corrente para um lado e para o outro
     fig, eixo=plt.subplots()
     correntes = RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=iniciais, resolucao=resolucao, eixo=eixo)
     correntes_inversas=RepresentacaoEscoamento.linhas_de_corrente(Problema, -u, pontos_iniciais=iniciais, resolucao=tamanho/10, eixo=eixo)
-    plt.savefig(path_salvar+" correntes.png", dpi=300, bbox_inches="tight")
+    plt.savefig(os.path.join(nome_diretorio, "Correntes.png"), dpi=300, bbox_inches="tight")
 
 def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
     '''Compara os resultados de um caso estacionario com os resultados de referencia.
@@ -325,10 +289,18 @@ if __name__ == "__main__":
     # teste_cavidade(tamanho=0.05,  dt=0.01, T=1, Re=1000, formulacao="A", executa=True, debug=False)
     # plt.show(block=True)
     # teste_cavidade(tamanho=0.01, p0=0,  executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
+    teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=True, formulacao="A")
+    teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=False, formulacao="A")
+    plt.show(block=True)
+    teste_cavidade(tamanho=0.05, dt=0.01, T=30, Re=100, executa=True, formulacao="D")
+    plt.show(block=True)
     for Re in (0.01,10,100,400,1000):
-        teste_cavidade(tamanho=0.01, p0=0, executa=True, dt=0.01, T=10, Re=Re, formulacao="A")
+        teste_cavidade(tamanho=0.05, p0=0, executa=True, dt=0.01, T=30, Re=Re, formulacao="A", debug=True)
         plt.close("all")
-    erros=compara_cavidade_ref(h=0.01, dt=0.01, T=10, formulacao="C", plota=True)
+    # for Re in (0.01,10,100,400,1000):
+    #     teste_cavidade(tamanho=0.03, p0=0, executa=True, dt=0.01, T=10, Re=Re, formulacao="A", debug=True)
+    #     plt.close("all")
+    erros=compara_cavidade_ref(h=0.05, dt=0.01, T=30, formulacao="A", plota=True)
     plt.show(block=True)
     for Re in (400,1000):
         teste_cavidade(tamanho=0.01, p0=0, executa=True, dt=0.01, T=1, Re=Re, formulacao="A")
