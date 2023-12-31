@@ -209,6 +209,28 @@ def calcula_termo_convectivo(produtos, tensor_convectivo, tensor_pertencimento, 
     integral[nos_dirichlet] *= 0
     return integral
 
+def coeficientes_aerodinamicos(Problema, u, p, Re, x_centro):
+    '''Calcula os coeficientes de arrasto, sustentacao, momento e pressao do aerofolio'''
+    forcas, posicoes, tensoes=Problema.calcula_forcas(p=p,u=u,Re=Re )
+    F=np.sum(forcas,axis=0)
+    forcas_p, posicoes, tensoes_p=Problema.calcula_forcas(p=p,u=u,Re=Re, viscosidade=False)
+    F_p = np.sum(forcas_p, axis=0)
+    rho = 1.
+    U0 = 1.
+    D = 1.
+    c_d = F[0] / (0.5 * rho * U0 ** 2 * D)
+    c_l = F[1] / (0.5 * rho * U0 ** 2 * D)
+    x_rel = posicoes - x_centro
+    M = np.sum(np.cross(x_rel, forcas), axis=0)
+    c_M = M / (0.5 * rho * U0 ** 2 * D ** 2)
+    pressao_a = Problema.interpola(np.array([0., 0.]), p, ordem=1)
+    pressao_b = Problema.interpola(np.array([1., 0.]), p, ordem=1)
+    c_p_a = pressao_a / (0.5 * rho * U0 ** 2)
+    c_p_b = pressao_b / (0.5 * rho * U0 ** 2)
+    c_d_p = F_p[0] / (0.5)
+    c_l_p = F_p[1] / (0.5)
+    return c_d, c_l, c_M, (c_p_a, c_p_b, c_d_p, (c_d-c_d_p), c_l_p, (c_l-c_l_p))
+
 
 class FEA(object):
     '''Classe para resolucao do escoamento usando o metodo de elementos finitos de Galerkin manualmente'''

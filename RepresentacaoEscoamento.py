@@ -2,6 +2,7 @@ import matplotlib.pyplot as plt
 import numpy
 import numpy as np
 from matplotlib import pyplot
+import os
 
 import ElementosFinitos
 from Definicoes import *
@@ -56,12 +57,14 @@ def plotar_perfis(Problema, resultados, t, lim_x=(0,5)):
 
 def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_grade=None, y_grade=None, local_grade=None, plota=True, titulo="", path_salvar=None, aspecto=(6,4), operacao=None):
     '''
+    Interpola a variavel em uma grade estruturada NxN e plota o mapa de cor.
     :param Problema:
     :param variavel: ux, uy ou p
     :param ordem: ordem da funcao de interpolacao da variavel
     :param resolucao: resolucao espacial, que se supoe ser igual para x e y
     :param areas_excluidas: lista de funcoes que retornam True para pontos que devem ser excluidos do mapa de cor
     :param operacao: operacao a ser aplicada no mapa de cor, em vez de simplesmente interpolar (e.g. calcular a conveccao)
+    :param x_grade: np.array (N,) coordenada x da grade estruturada em que se calcula o mapa de cor para o mapa de cor
     :return:
     '''
 
@@ -154,6 +157,50 @@ def linhas_de_corrente(Problema, u, pontos_iniciais, resolucao=0.01, areas_exclu
 
     return linhas
 
+def plotar_dataframe_analise_n(dataframe, path_salvar=None):
+    fig1, eixo1=plt.subplots()
+    plt.suptitle(u"Variação dos coeficientes dinâmicos")
+    eixo1.plot(dataframe.index, dataframe["c_L"], label="c_L")
+    eixo1.plot(dataframe.index, dataframe["c_D"], label="c_D")
+    eixo1.plot(dataframe.index, dataframe["c_M"], label="c_M")
+    eixo1.set_xlabel(u"Número de pontos no contorno")
+    eixo1.set_ylabel("Coeficiente adimensional")
+    eixo1.legend()
+    if not path_salvar is None: plt.savefig(os.path.join(path_salvar,"Coeficientes.png"), dpi=300, bbox_inches="tight")
+    fig2, eixo2 = plt.subplots()
+    plt.suptitle(u"Erro da velocidade vertical")
+    eixo2.set_xlabel(u"Número de pontos no contorno")
+    eixo2.set_ylabel("Erro")
+    eixo2.plot(dataframe.index, dataframe["eqm_v"], label=u"Erro quadrático médio")
+    eixo2.plot(dataframe.index, dataframe["e_max_v"], label=u"Erro máximo")
+    eixo2.plot(dataframe.index, dataframe["vies_v"], label=u"Erro médio (viés)")
+    eixo2.legend()
+    if not path_salvar is None: plt.savefig(os.path.join(path_salvar,"Erro V.png"), dpi=300, bbox_inches="tight")
+    fig3, eixo3 = plt.subplots()
+    plt.suptitle(u"Erro da velocidade horizontal")
+    eixo3.set_xlabel(u"Número de pontos no contorno")
+    eixo3.set_ylabel("Erro")
+    eixo3.plot(dataframe.index, dataframe["eqm_u"], label=u"Erro quadrático médio")
+    eixo3.plot(dataframe.index, dataframe["e_max_u"], label=u"Erro máximo")
+    eixo3.plot(dataframe.index, dataframe["vies_u"], label=u"Erro médio (viés)")
+    eixo3.legend()
+    if not path_salvar is None: plt.savefig(os.path.join(path_salvar,"Erro U.png"), dpi=300, bbox_inches="tight")
+    fig4, eixo4 = plt.subplots()
+    plt.suptitle(u"Erro da pressão")
+    eixo4.set_xlabel(u"Número de pontos no contorno")
+    eixo4.set_ylabel("Erro")
+    eixo4.plot(dataframe.index, dataframe["eqm_p"], label=u"Erro quadrático médio")
+    eixo4.plot(dataframe.index, dataframe["e_max_p"], label=u"Erro máximo")
+    eixo4.plot(dataframe.index, dataframe["vies_p"], label=u"Erro médio (viés)")
+    eixo4.legend()
+    if not path_salvar is None: plt.savefig(os.path.join(path_salvar,"Erro P.png"), dpi=300, bbox_inches="tight")
+    fig4, eixo4 = plt.subplots()
+    plt.suptitle(u"Tempo de cálculo")
+    eixo4.set_xlabel(u"Número de pontos no contorno")
+    eixo4.set_ylabel("Tempo [s]")
+    eixo4.plot(dataframe.index, dataframe["t"])
+    if not path_salvar is None: plt.savefig(os.path.join(path_salvar,"Tempo.png"), dpi=300, bbox_inches="tight")
+    return
 
 
 

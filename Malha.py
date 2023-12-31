@@ -67,8 +67,9 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     geo.add_line(2, 4, tag=contornos["superior"])
 
     ###versao a vera com aerofolio
-    ponto_inicial = geo.add_point(aerofolio.x_med(0), aerofolio.y_med(0), 0, tamanho)
-    ponto_final = geo.add_point(aerofolio.x_med(1), aerofolio.y_med(1), 0, tamanho)
+    tamanho_af=tamanho
+    ponto_inicial = geo.add_point(aerofolio.x_med(0), aerofolio.y_med(0), 0, tamanho_af)
+    ponto_final = geo.add_point(aerofolio.x_med(1), aerofolio.y_med(1), 0, tamanho_af)
     pontos_sup = [ponto_inicial, ]
     pontos_inf = [ponto_inicial, ]
     af_sup = []
@@ -76,8 +77,8 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     for i in range(1, n_pontos_contorno) :
         ##eta eh igual ao x da linha base do aerofolio
         eta = i / n_pontos_contorno
-        pontos_sup.append(geo.add_point(aerofolio.x_sup(eta), aerofolio.y_sup(eta), 0, tamanho))
-        pontos_inf.append(geo.add_point(aerofolio.x_inf(eta), aerofolio.y_inf(eta), 0, tamanho))
+        pontos_sup.append(geo.add_point(aerofolio.x_sup(eta), aerofolio.y_sup(eta), 0, tamanho_af))
+        pontos_inf.append(geo.add_point(aerofolio.x_inf(eta), aerofolio.y_inf(eta), 0, tamanho_af))
     pontos_sup.append(ponto_final) ##O ponto final eh o mesmo para as duas linhas
     pontos_inf.append(ponto_final)
     for i in range(n_pontos_contorno) :
