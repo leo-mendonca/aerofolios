@@ -9,8 +9,6 @@ import Malha
 from Definicoes import *
 
 
-
-
 def exporta_valores(u, t, malha, path):
     '''Exporta os valores de u para um arquivo .csv'''
     # TODO fazer
@@ -154,42 +152,47 @@ def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False
         plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_malha.png"), bbox_inches="tight")
         plt.show(block=False)
 
+
 def produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2):
     '''Calcula, em cada par j,k de nos em cada elemento da malha, o produto ux_j*uy_k dos valores nodais
     Usado para calcular o termo de conveccao do problema de Navier-Stokes
     Se ux=uy, calcula o produto cartesiano de uma mesma variavel
     :param ux_elementos: np.ndarray n_ex6. array de elementos contendo o valor de ux em cada no de cada elemento
     :return produtos: np.ndarray n_ex6x6. array de elementos contendo o produto cartesiano de ux e uy em cada par de nos de cada elemento'''
-    if ordem==1: nos=3
-    elif ordem==2: nos=6
-    else: raise NotImplementedError("Ordem de elementos nao implementada")
-    ux_grid=np.stack([ux_elementos.T for _ in range(nos)], axis=1)
-    uy_grid=np.stack([uy_elementos.T for _ in range(nos)], axis=0)
-    produtos=ux_grid*uy_grid
-    return np.transpose(produtos, (2,0,1))
+    if ordem == 1:
+        nos = 3
+    elif ordem == 2:
+        nos = 6
+    else:
+        raise NotImplementedError("Ordem de elementos nao implementada")
+    ux_grid = np.stack([ux_elementos.T for _ in range(nos)], axis=1)
+    uy_grid = np.stack([uy_elementos.T for _ in range(nos)], axis=0)
+    produtos = ux_grid * uy_grid
+    return np.transpose(produtos, (2, 0, 1))
+
 
 def tensor_pertencimento(elementos):
     '''Produz um tensor esparso G tal que Gilq = 1 se e somente se o no i eh o q-esimo no do elemento l'''
-    posicao=[]
-    valor=[]
-    n_nos=int(np.max(elementos)+1)
+    posicao = []
+    valor = []
+    n_nos = int(np.max(elementos) + 1)
     for l in range(elementos.shape[0]):
         for q in range(elementos.shape[1]):
-            i=elementos[l,q]
-            posicao.append((i,l,q))
+            i = elementos[l, q]
+            posicao.append((i, l, q))
             valor.append(1)
-    valor=np.array(valor, dtype=np.float64)
-    tensor=tf.sparse.SparseTensor(posicao, valor, dense_shape=(n_nos, elementos.shape[0], elementos.shape[1]))
+    valor = np.array(valor, dtype=np.float64)
+    tensor = tf.sparse.SparseTensor(posicao, valor, dense_shape=(n_nos, elementos.shape[0], elementos.shape[1]))
     return tensor
+
 
 def matriz_diagonal(u):
     '''Escreve uma matriz esparsa diagonal que tem os valores de u na diagonal'''
-    n=u.shape[0]
-    linhas=np.arange(n)
-    colunas=linhas
-    valores=u
-    return ssp.coo_matrix((valores, (linhas, colunas)), shape=(n,n))
-
+    n = u.shape[0]
+    linhas = np.arange(n)
+    colunas = linhas
+    valores = u
+    return ssp.coo_matrix((valores, (linhas, colunas)), shape=(n, n))
 
 
 def calcula_termo_convectivo(produtos, tensor_convectivo, tensor_pertencimento, nos_dirichlet=[]):
@@ -197,15 +200,14 @@ def calcula_termo_convectivo(produtos, tensor_convectivo, tensor_pertencimento, 
     :param u: vetor nx2 contendo os valores nodais de (ux,uy)
     :param tensor_convectivo: tensor n_ex6x6x6 cujo termo Dlijk da a contribuicao do produto dos nos j e k do elemento l quando a funcao teste eh igual a 1 no no i
     '''
-    D=tensor_convectivo #Dqljk eh a componente da integral do termo convectivo no elemento l, com o q-esimo no como funcao teste, multiplicado pelo j-esimo e o k-esimo nos do mesmo elemento
-    G=tensor_pertencimento #Gilq=1 se o no i eh o q-esimo no do elemento l
+    D = tensor_convectivo  # Dqljk eh a componente da integral do termo convectivo no elemento l, com o q-esimo no como funcao teste, multiplicado pelo j-esimo e o k-esimo nos do mesmo elemento
+    G = tensor_pertencimento  # Gilq=1 se o no i eh o q-esimo no do elemento l
     # p=elementos.shape[1] #numero de nos por elemento, igual a 6 no elementos quadratico
-    P=produtos #Pljk eh o produto de uj*uk no elemento l
-    F=np.sum(D*P, axis=(2,3)).T #Flq eh a soma de Dqljk*Pljk sobre j e k
-    integral=tf.sparse.reduce_sum(G*F, axis=(1,2))._numpy()
-    integral[nos_dirichlet]*=0
+    P = produtos  # Pljk eh o produto de uj*uk no elemento l
+    F = np.sum(D * P, axis=(2, 3)).T  # Flq eh a soma de Dqljk*Pljk sobre j e k
+    integral = tf.sparse.reduce_sum(G * F, axis=(1, 2))._numpy()
+    integral[nos_dirichlet] *= 0
     return integral
-
 
 
 class FEA(object):
@@ -226,11 +228,11 @@ class FEA(object):
         self.velocidade = velocidade
         self.aerofolio = aerofolio
         self.nos, self.x_nos, self.elementos, self.arestas, self.nos_cont, self.x_cont, self.arestas_cont = Malha.ler_malha(nome_malha, tag_fis)
-        self.x_min, self.y_min =np.min(self.x_nos, axis=0)[:2]
-        self.x_max, self.y_max =np.max(self.x_nos, axis=0)[:2]
+        self.x_min, self.y_min = np.min(self.x_nos, axis=0)[:2]
+        self.x_max, self.y_max = np.max(self.x_nos, axis=0)[:2]
         self.nos_o1, self.elementos_o1 = Malha.reduz_ordem(self.elementos)
-        self.arestas_o1=self.arestas[:,(0,2)] #inclui apenas os nos inicial e final da aresta
-        self.arestas_cont_o1={chave:self.arestas_cont[chave][:,(0,2)] for chave in self.arestas_cont.keys()}
+        self.arestas_o1 = self.arestas[:, (0, 2)]  # inclui apenas os nos inicial e final da aresta
+        self.arestas_cont_o1 = {chave: self.arestas_cont[chave][:, (0, 2)] for chave in self.arestas_cont.keys()}
         self.x_nos_o1 = self.x_nos[self.nos_o1]
         self.nos_cont_o1 = {chave: np.intersect1d(self.nos_o1, self.nos_cont[chave]) for chave in self.nos_cont.keys()}
         self.nos_faces = np.setdiff1d(self.nos, self.nos_o1)
@@ -240,7 +242,7 @@ class FEA(object):
         self.coefs_o1_alfa = self.funcoes_forma_alfa(ordem=1)
         self.coefs_o2_alfa = self.funcoes_forma_alfa(ordem=2)
         ##Tensor de pertencimento: indica a que elementos pertence cada no, e em que posicao
-        self.pertencimento=tensor_pertencimento(self.elementos)
+        self.pertencimento = tensor_pertencimento(self.elementos)
         self.pertencimento_o1 = tensor_pertencimento(self.elementos_o1)
         ##Fatores que auxiliam na integracao de qualquer expressao que possa ser escrita como rho1+ rho2*alfa + rho3*beta + rho4*alfa² ...
         self.fatores_integracao = np.array([[math.factorial(k) * math.factorial(n) / math.factorial(k + n + 2) for k in range(7)] for n in range(7)])
@@ -258,7 +260,7 @@ class FEA(object):
             self.fatores_integracao[4, 0],
             self.fatores_integracao[0, 4],
             self.fatores_integracao[3, 1],
-            self.fatores_integracao[2,2],
+            self.fatores_integracao[2, 2],
             self.fatores_integracao[1, 3],
             self.fatores_integracao[5, 0],
             self.fatores_integracao[0, 5],
@@ -269,10 +271,10 @@ class FEA(object):
 
         ])
         ##Definindo a relacao entre a numeracao dos nos de ordem 1 e 2
-        nose=self.nos.copy()
-        nose[~np.in1d(nose,self.nos_o1)]=self.nos[-1]+1
+        nose = self.nos.copy()
+        nose[~np.in1d(nose, self.nos_o1)] = self.nos[-1] + 1
         uni, inv = np.unique(nose, return_inverse=True)
-        self.mascara_nos_o1=inv
+        self.mascara_nos_o1 = inv
 
     def matriz_laplaciano_escalar2(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1, verbose=False, gauss=False):
         '''Monta a matriz A do sistema linear correspondente a uma equacao de Laplace nabla^2(p)=0, com p escalar
@@ -466,22 +468,22 @@ class FEA(object):
             ])
             valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
         elif ordem_i == 2 and ordem_j == 2:
-            aj,bj,cj,dj,ej,fj=self.coefs_o2[l,pos_j]
-            api,bpi,cpi,dpi,epi,fpi=self.coefs_o2_alfa[pos_i]
-            q=bj
-            r=2*dj*x[1]+fj*y[1]
-            s=2*dj*x[2]+fj*y[2]
-            rho=np.array([
-                q*api,
-                q*bpi+r*api,
-                q*cpi+s*api,
-                q*dpi+r*bpi,
-                q*epi+s*cpi,
-                q*fpi+r*cpi+s*bpi,
-                r*dpi,
-                s*epi,
-                r*fpi+s*dpi,
-                r*epi+s*fpi,
+            aj, bj, cj, dj, ej, fj = self.coefs_o2[l, pos_j]
+            api, bpi, cpi, dpi, epi, fpi = self.coefs_o2_alfa[pos_i]
+            q = bj
+            r = 2 * dj * x[1] + fj * y[1]
+            s = 2 * dj * x[2] + fj * y[2]
+            rho = np.array([
+                q * api,
+                q * bpi + r * api,
+                q * cpi + s * api,
+                q * dpi + r * bpi,
+                q * epi + s * cpi,
+                q * fpi + r * cpi + s * bpi,
+                r * dpi,
+                s * epi,
+                r * fpi + s * dpi,
+                r * epi + s * fpi,
             ])
             valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
 
@@ -519,22 +521,22 @@ class FEA(object):
             ])
             valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
         elif ordem_i == 2 and ordem_j == 2:
-            aj,bj,cj,dj,ej,fj=self.coefs_o2[l,pos_j]
-            api,bpi,cpi,dpi,epi,fpi=self.coefs_o2_alfa[pos_i]
-            q=cj
-            r=2*ej*y[1]+fj*x[1]
-            s=2*ej*y[2]+fj*x[2]
-            rho=np.array([
-                q*api,
-                q*bpi+r*api,
-                q*cpi+s*api,
-                q*dpi+r*bpi,
-                q*epi+s*cpi,
-                q*fpi+r*cpi+s*bpi,
-                r*dpi,
-                s*epi,
-                r*fpi+s*dpi,
-                r*epi+s*fpi,
+            aj, bj, cj, dj, ej, fj = self.coefs_o2[l, pos_j]
+            api, bpi, cpi, dpi, epi, fpi = self.coefs_o2_alfa[pos_i]
+            q = cj
+            r = 2 * ej * y[1] + fj * x[1]
+            s = 2 * ej * y[2] + fj * x[2]
+            rho = np.array([
+                q * api,
+                q * bpi + r * api,
+                q * cpi + s * api,
+                q * dpi + r * bpi,
+                q * epi + s * cpi,
+                q * fpi + r * cpi + s * bpi,
+                r * dpi,
+                s * epi,
+                r * fpi + s * dpi,
+                r * epi + s * fpi,
             ])
             valor = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
         else:
@@ -685,95 +687,97 @@ class FEA(object):
         :param debug: se True, calcula a integral numericamente, em vez de analiticamente
         Retorna um dicionario com as chaves "x" e "y", cada uma contendo um tensor de dimensoes (p,n_elem,p,p), onde p eh o numero de nos por elemento e n_elem o numero de elementos
         Diljk=contribuicao dos nos j e k do elemento l para a integral de (u*del)u*Ni'''
-        if ordem==2:
-            p=6
-            elementos=self.elementos
-        else: raise NotImplementedError(f"Ainda nao implementado para ordem {ordem}")
+        if ordem == 2:
+            p = 6
+            elementos = self.elementos
+        else:
+            raise NotImplementedError(f"Ainda nao implementado para ordem {ordem}")
         ###Definicao da expressao dos termos q,r,s que definem dN/dx= q + r*alfa + s*beta
-        calc_qrs={"x":lambda a,b,c,d,e,f, x, y: (b,2*d*x[1]+f*y[1], 2*d*x[2]+f*y[2]),
-                  "y": lambda a,b,c,d,e,f, x, y: (c,2*e*y[1]+f*x[1], 2*e*y[2]+f*x[2])}
-        n_elem=len(self.elementos)
-        tensores= {"x":np.zeros(( p,n_elem, p, p),dtype=np.float64), "y":np.zeros(( p,n_elem, p, p),dtype=np.float64)}
-        #O tensor sera simetrico entre i e j, logo nao eh necessario fazer o loop para j>i
-        x_elem=self.x_nos[elementos]
+        calc_qrs = {"x": lambda a, b, c, d, e, f, x, y: (b, 2 * d * x[1] + f * y[1], 2 * d * x[2] + f * y[2]),
+                    "y": lambda a, b, c, d, e, f, x, y: (c, 2 * e * y[1] + f * x[1], 2 * e * y[2] + f * x[2])}
+        n_elem = len(self.elementos)
+        tensores = {"x": np.zeros((p, n_elem, p, p), dtype=np.float64), "y": np.zeros((p, n_elem, p, p), dtype=np.float64)}
+        # O tensor sera simetrico entre i e j, logo nao eh necessario fazer o loop para j>i
+        x_elem = self.x_nos[elementos]
         for l in range(n_elem):
-            pontos=(x_elem[l]-x_elem[l,0])
-            x,y=pontos.T[:2]
-            det=self.dets_lin[l]
+            pontos = (x_elem[l] - x_elem[l, 0])
+            x, y = pontos.T[:2]
+            det = self.dets_lin[l]
             for i in range(p):
-                ai,bi,ci,di,ei,fi=self.coefs_o2_alfa[i]
+                ai, bi, ci, di, ei, fi = self.coefs_o2_alfa[i]
                 for j in range(p):
-                    aj,bj,cj,dj,ej,fj=self.coefs_o2_alfa[j]
+                    aj, bj, cj, dj, ej, fj = self.coefs_o2_alfa[j]
                     for k in range(p):
-                        ak,bk,ck,dk,ek,fk=self.coefs_o2_alfa[k]
+                        ak, bk, ck, dk, ek, fk = self.coefs_o2_alfa[k]
                         if not debug:
-                            for direcao_derivada in ("x","y"):
+                            for direcao_derivada in ("x", "y"):
                                 q, r, s = calc_qrs[direcao_derivada](ak, bk, ck, dk, ek, fk, x, y)
-                                rho=np.array([
-                                    ai * aj * q, #constante
-                                    ai * aj * r + ai * bj * q + aj * bi * q, #alfa
-                                    ai * bj * r + ai * dj * q + aj * bi * r + aj * di * q + bi * bj * q, #beta
-                                    ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q, #alfa²
-                                    ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q, #beta²
-                                    ai * bj * s + ai * cj * r + ai * fj * q + aj * bi * s + aj * ci * r + aj * fi * q + bi * cj * q + bj * ci * q, #alfa*beta
-                                    ai * dj * r + aj * di * r + bi * bj * r + bi * dj * q + bj * di * q, #alfa³
-                                    ai * ej * s + aj * ei * s + ci * cj * s + ci * ej * q + cj * ei * q, #beta³
-                                    ai * dj * s + ai * fj * r + aj * di * s + aj * fi * r + bi * bj * s + bi * cj * r + bi * fj * q + bj * ci * r + bj * fi * q + ci * dj * q + cj * di * q, #alfa²*beta
-                                    ai * ej * r + ai * fj * s + aj * ei * r + aj * fi * s + bi * cj * s + bi * ej * q + bj * ci * s + bj * ei * q + ci * cj * r + ci * fj * q + cj * fi * q, #alfa*beta²
-                                    bi * dj * r + bj * di * r + di * dj * q, #alfa⁴
-                                    ci * ej * s + cj * ei * s + ei * ej * q, #beta⁴
-                                    bi * dj * s + bi * fj * r + bj * di * s + bj * fi * r + ci * dj * r + cj * di * r + di * fj * q + dj * fi * q, #alfa³*beta
-                                    bi * ej * r + bi * fj * s + bj * ei * r + bj * fi * s + ci * dj * s + ci * fj * r + cj * di * s + cj * fi * r + di * ej * q + dj * ei * q + fi * fj * q, #alfa²*beta²
-                                    bi * ej * s + bj * ei * s + ci * ej * r + ci * fj * s + cj * ei * r + cj * fi * s + ei * fj * q + ej * fi * q, #alfa*beta³
-                                    di * dj * r, #alfa⁵
-                                    ei * ej * s, #beta⁵
-                                    di * dj * s + di * fj * r + dj * fi * r, #alfa⁴*beta
-                                    di * ej * r + di * fj * s + dj * ei * r + dj * fi * s + fi * fj * r, #alfa³*beta²
-                                    di * ej * s + dj * ei * s + ei * fj * r + ej * fi * r + fi * fj * s, #alfa²*beta³
-                                    ei * ej * r + ei * fj * s + ej * fi * s, #alfa*beta⁴
+                                rho = np.array([
+                                    ai * aj * q,  # constante
+                                    ai * aj * r + ai * bj * q + aj * bi * q,  # alfa
+                                    ai * bj * r + ai * dj * q + aj * bi * r + aj * di * q + bi * bj * q,  # beta
+                                    ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q,  # alfa²
+                                    ai * cj * s + ai * ej * q + aj * ci * s + aj * ei * q + ci * cj * q,  # beta²
+                                    ai * bj * s + ai * cj * r + ai * fj * q + aj * bi * s + aj * ci * r + aj * fi * q + bi * cj * q + bj * ci * q,  # alfa*beta
+                                    ai * dj * r + aj * di * r + bi * bj * r + bi * dj * q + bj * di * q,  # alfa³
+                                    ai * ej * s + aj * ei * s + ci * cj * s + ci * ej * q + cj * ei * q,  # beta³
+                                    ai * dj * s + ai * fj * r + aj * di * s + aj * fi * r + bi * bj * s + bi * cj * r + bi * fj * q + bj * ci * r + bj * fi * q + ci * dj * q + cj * di * q,  # alfa²*beta
+                                    ai * ej * r + ai * fj * s + aj * ei * r + aj * fi * s + bi * cj * s + bi * ej * q + bj * ci * s + bj * ei * q + ci * cj * r + ci * fj * q + cj * fi * q,  # alfa*beta²
+                                    bi * dj * r + bj * di * r + di * dj * q,  # alfa⁴
+                                    ci * ej * s + cj * ei * s + ei * ej * q,  # beta⁴
+                                    bi * dj * s + bi * fj * r + bj * di * s + bj * fi * r + ci * dj * r + cj * di * r + di * fj * q + dj * fi * q,  # alfa³*beta
+                                    bi * ej * r + bi * fj * s + bj * ei * r + bj * fi * s + ci * dj * s + ci * fj * r + cj * di * s + cj * fi * r + di * ej * q + dj * ei * q + fi * fj * q,  # alfa²*beta²
+                                    bi * ej * s + bj * ei * s + ci * ej * r + ci * fj * s + cj * ei * r + cj * fi * s + ei * fj * q + ej * fi * q,  # alfa*beta³
+                                    di * dj * r,  # alfa⁵
+                                    ei * ej * s,  # beta⁵
+                                    di * dj * s + di * fj * r + dj * fi * r,  # alfa⁴*beta
+                                    di * ej * r + di * fj * s + dj * ei * r + dj * fi * s + fi * fj * r,  # alfa³*beta²
+                                    di * ej * s + dj * ei * s + ei * fj * r + ej * fi * r + fi * fj * s,  # alfa²*beta³
+                                    ei * ej * r + ei * fj * s + ej * fi * s,  # alfa*beta⁴
                                 ])
-                                integracao=det*(rho*self.fatores_rho[:len(rho)]).sum(axis=0)
+                                integracao = det * (rho * self.fatores_rho[:len(rho)]).sum(axis=0)
                                 ##Nos aproveitamos da simetria entre i e j
                                 tensores[direcao_derivada][i, l, j, k] = integracao
                                 # tensores[direcao_derivada][j,l,i,k]=integracao
                         elif debug:
-                            grad=self.grad_N_rel(k,l, pontos, ordem)
-                            grad={"x":grad[:,0], "y":grad[:,1]}
-                            for direcao_derivada in ("x","y"):
-                                valores=(self.N_rel(i,l, pontos, ordem)*self.N_rel(j,l, pontos, ordem)*grad[direcao_derivada])
-                                integracao=det/2*np.average(valores)
+                            grad = self.grad_N_rel(k, l, pontos, ordem)
+                            grad = {"x": grad[:, 0], "y": grad[:, 1]}
+                            for direcao_derivada in ("x", "y"):
+                                valores = (self.N_rel(i, l, pontos, ordem) * self.N_rel(j, l, pontos, ordem) * grad[direcao_derivada])
+                                integracao = det / 2 * np.average(valores)
                                 tensores[direcao_derivada][i, l, j, k] = integracao
         return tensores["x"], tensores["y"]
 
-    def monta_matriz_convectiva_ao_vivo(self, u_n_x, tensor_convectivo,  nos_dirichlet=[]):
+    def monta_matriz_convectiva_ao_vivo(self, u_n_x, tensor_convectivo, nos_dirichlet=[]):
         '''Monta a matriz que, aplicada no vetor u de velocidades em uma dada direcao, produz o vetor da integracao do tertmo convectivo na equacao'''
         raise DeprecationWarning("Nao usar essa funcao, usar monta_tensor_matriz_convectiva")
-        p=self.elementos.shape[1] ##p=6
-        n_nos=len(self.nos)
-        n_elem=len(self.elementos)
+        p = self.elementos.shape[1]  ##p=6
+        n_nos = len(self.nos)
+        n_elem = len(self.elementos)
         D = tensor_convectivo  # Dqljk eh a componente da integral do termo convectivo no elemento l, com o q-esimo no como funcao teste, multiplicado pelo j-esimo e o k-esimo nos do mesmo elemento
         G = self.pertencimento  # Gilq=1 se o no i eh o q-esimo no do elemento l
-        shape=(len(self.nos),len(self.nos))
+        shape = (len(self.nos), len(self.nos))
         ##Duqsl=Dqlrs*ulr (soma variando r de 1 a 6)
-        u=u_n_x[self.elementos] ##Valores nodais de u em cada elemento (ne x 6)
-        Du=tf.reduce_sum(tf.transpose(D, perm=[0,3,1,2])* u, axis=-1)
+        u = u_n_x[self.elementos]  ##Valores nodais de u em cada elemento (ne x 6)
+        Du = tf.reduce_sum(tf.transpose(D, perm=[0, 3, 1, 2]) * u, axis=-1)
         ##GDu_jql = G_jls*Du_qsl (soma variando s de 1 a 6)
-        intermediario=[]
+        intermediario = []
         for i in range(p):
-            intermediario.append(tf.sparse.reduce_sum(G*tf.transpose(Du[i]),axis=-1, output_is_sparse=True))
-        GDu= tf.sparse.reshape(tf.sparse.concat(0, intermediario), (n_nos,p, n_elem)) ##Empilhando as linhas da lista intermediaria
-        intermediario=None
+            intermediario.append(tf.sparse.reduce_sum(G * tf.transpose(Du[i]), axis=-1, output_is_sparse=True))
+        GDu = tf.sparse.reshape(tf.sparse.concat(0, intermediario), (n_nos, p, n_elem))  ##Empilhando as linhas da lista intermediaria
+        intermediario = None
         ##shape_GDu= (n_nos,p, n_elem)
         ##GGDu_ij = G_ilq*GDu_jql (soma variando l de 1 a n_elem e q de 1 a 6)
         ##TODO resolver o fato de que da ruim (nao pode multiplicar 2 esparsos)
-        GGDu=tf.sparse.reduce_sum(G*tf.sparse.transpose(GDu, [0,2,1]), axis=(-1,-2))
+        GGDu = tf.sparse.reduce_sum(G * tf.sparse.transpose(GDu, [0, 2, 1]), axis=(-1, -2))
         GGDu[nos_dirichlet] *= 0
         return GGDu
+
     def monta_tensor_matriz_convectiva(self, tensor_convectivo, contornos_dirichlet):
         '''Produz um tensor que vai, aplicado ao vetor de velocidade do apsso anterior, produzir a matriz que representa o termo convectivo ud/dx ou vd/dy'''
-        D=tensor_convectivo
-        p=self.elementos.shape[1] ##p=6
-        indices, valores=[], []
+        D = tensor_convectivo
+        p = self.elementos.shape[1]  ##p=6
+        indices, valores = [], []
         ###Definindo os pontos com condicao de dirichlet, onde a funcao tentativa eh nula
         pontos_dirichlet = np.concatenate([contornos_dirichlet[i][0] for i in range(len(contornos_dirichlet))])  # lista de todos os pontos com condicao de dirichlet
         pontos_sem_dirichlet = np.setdiff1d(self.nos, pontos_dirichlet)  # lista de nos da funcao teste sem condição de dirichlet
@@ -783,22 +787,21 @@ class FEA(object):
                 pos_i = np.nonzero(self.elementos[l] == i)[0][0]  # posicao do ponto i no elemento l
                 ind_i = i
                 for pos_j in range(p):  # varremos os pontos do elemento l
-                    j=self.elementos[l,pos_j]
+                    j = self.elementos[l, pos_j]
                     x_abs, y_abs = self.x_nos[self.elementos[l]].T[:2]
                     x, y = x_abs - x_abs[0], y_abs - y_abs[0]
                     pos_j = np.nonzero(self.elementos[l] == j)[0][0]  # posicao do ponto j no elemento l
                     ind_j = j
                     for pos_k in range(p):
-                        k=self.elementos[l,pos_k]
-                        ind_k=k
-                        valor=D[pos_i,l, pos_j, pos_k]
+                        k = self.elementos[l, pos_k]
+                        ind_k = k
+                        valor = D[pos_i, l, pos_j, pos_k]
                         indices.append([ind_i, ind_j, ind_k])
                         valores.append(valor)
 
         # A = ssp.coo_matrix((valores, (linhas, colunas)), shape=(len(nos_teste), len(nos_tentativa)), dtype=np.float64)
-        T= tf.sparse.SparseTensor(indices, valores, dense_shape=(len(self.nos), len(self.nos), len(self.nos)))
+        T = tf.sparse.SparseTensor(indices, valores, dense_shape=(len(self.nos), len(self.nos), len(self.nos)))
         return T
-
 
     def matriz_laplaciano_escalar(self, contornos_dirichlet=[], contornos_neumann=[], contornos_livres=[], ordem=1):
         A = self.monta_matriz(self.procedimento_laplaciano, contornos_dirichlet, ordem=ordem)
@@ -971,19 +974,20 @@ class FEA(object):
         :param formulacao: str. Formulacao a ser usada para o calculo de u e p. Pode ser "A", "B" ou "C".
             "A": calculo de u* considerando a pressao do passo anterior. "B": calculo de u* sem considerar a pressao. "C": igual ao A, mas nao inclui o termo convectivo (equacao de STokes); "D": igual ao A, mas considera o termo difusivo so do passo de tempo anterior
         '''
-        if formulacao in ("A", "B", "D","E","F"):
-            conveccao=True
-        elif formulacao=="C":
-            conveccao=False
-        else: raise ValueError(f"Formulacao {formulacao} nao suportada")
+        if formulacao in ("A", "B", "D", "E", "F"):
+            conveccao = True
+        elif formulacao == "C":
+            conveccao = False
+        else:
+            raise ValueError(f"Formulacao {formulacao} nao suportada")
         ##Definindo a estrutura da matriz de solucao
         n = len(self.nos)
         k = len(self.nos_o1)
         m = 2 * n + k  # duas dimensoes de velocidade (ordem 2) e uma de pressao (ordem 1)
 
         ##Inicializando os vetores de solucao
-        u_n = np.ones((len(self.nos), 2), dtype=np.float64)*np.array([u0, v0])  # velocidade inicial
-        p_n = np.ones(self.nos_o1.shape, dtype=np.float64)*p0  # a ordem dos elementos da pressao deve ser menor que da velocidade
+        u_n = np.ones((len(self.nos), 2), dtype=np.float64) * np.array([u0, v0])  # velocidade inicial
+        p_n = np.ones(self.nos_o1.shape, dtype=np.float64) * p0  # a ordem dos elementos da pressao deve ser menor que da velocidade
 
         ##Aplicando condicoes de dirichlet nos valores iniciais
         for (cont, funcao) in ux_dirichlet:
@@ -1010,26 +1014,27 @@ class FEA(object):
         mat_gradu_x_o2 = self.monta_matriz(procedimento=self.procedimento_derivx, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=2)
         mat_gradu_y_o2 = self.monta_matriz(procedimento=self.procedimento_derivy, contornos_dirichlet=ux_dirichlet, ordem_teste=2, ordem_tentativa=2)
         ##u_ast
-        if formulacao in ("A","B","C", "E","F"):
+        if formulacao in ("A", "B", "C", "E", "F"):
             matriz_bloco1 = mat_integracao_o2 / dt - mat_lap_o2 / Re
-        elif formulacao=="D":
-            matriz_bloco1 = mat_integracao_o2 / dt - (1/2)*mat_lap_o2 / Re
+        elif formulacao == "D":
+            matriz_bloco1 = mat_integracao_o2 / dt - (1 / 2) * mat_lap_o2 / Re
 
         A_dirich_ux, b_dirich_ux = self.monta_matriz_dirichlet(ux_dirichlet, ordem=2)
         A_dirich_uy, b_dirich_uy = self.monta_matriz_dirichlet(uy_dirichlet, ordem=2)
-        nos_dirich_ux=np.concatenate([cont for (cont, funcao) in ux_dirichlet])
-        nos_dirich_uy=np.concatenate([cont for (cont, funcao) in uy_dirichlet])
+        nos_dirich_ux = np.concatenate([cont for (cont, funcao) in ux_dirichlet])
+        nos_dirich_uy = np.concatenate([cont for (cont, funcao) in uy_dirichlet])
         A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
         ##p_ast
         A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
-        if formulacao in ("A","C", "D", "E","F"):
+        if formulacao in ("A", "C", "D", "E", "F"):
             b_dirich_p *= 0  # Como p_ast eh apenas a diferenca entre p_n+1 e p_n, a condicao de dirichlet para p_n+1 eh a mesma que para p_n
-        elif formulacao=="B": pass
+        elif formulacao == "B":
+            pass
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
         if conveccao:
-            D_x, D_y=self.monta_tensor_convectivo(ordem=2, debug=debug) ##tensores relevantes para o termo convectivo derivado em x e y, respectivamente
-            tensor_conv_Dx=self.monta_tensor_matriz_convectiva(D_x, ux_dirichlet)
-            tensor_conv_Dy=self.monta_tensor_matriz_convectiva(D_y, ux_dirichlet)
+            D_x, D_y = self.monta_tensor_convectivo(ordem=2, debug=debug)  ##tensores relevantes para o termo convectivo derivado em x e y, respectivamente
+            tensor_conv_Dx = self.monta_tensor_matriz_convectiva(D_x, ux_dirichlet)
+            tensor_conv_Dy = self.monta_tensor_matriz_convectiva(D_y, ux_dirichlet)
 
         A_p = mat_lap_o1 + A_dirich_p
         ##u
@@ -1041,8 +1046,8 @@ class FEA(object):
 
         resultados = {}  # Dicionario contendo os resultados da simulacao para alguns passos de tempo
 
-        cont_salvar=0 #quando chega a 10, salvamos o valor atual de u e p
-        tempos_salvos=[]
+        cont_salvar = 0  # quando chega a 10, salvamos o valor atual de u e p
+        tempos_salvos = []
         tempos = np.arange(0, T + dt, dt)
         for t in tempos:
             print(f"Resolvendo para t={t}")
@@ -1052,53 +1057,53 @@ class FEA(object):
             vetor_un = np.concatenate(((mat_integracao_o2) @ u_n[:, 0], (mat_integracao_o2) @ u_n[:, 1]))
             if conveccao:
 
-                if formulacao in ("A","B","D"):
+                if formulacao in ("A", "B", "D"):
                     ux_elementos = u_n[:, 0][self.elementos]
                     uy_elementos = u_n[:, 1][self.elementos]
                     produtos_uxuy = produto_cartesiano_nodais(ux_elementos, uy_elementos, ordem=2)
                     produtos_uyux = produto_cartesiano_nodais(uy_elementos, ux_elementos, ordem=2)
-                    produtos_uyux=np.transpose(produtos_uyux, axes=(0,2,1))
+                    produtos_uyux = np.transpose(produtos_uyux, axes=(0, 2, 1))
                     produtos_uxux = produto_cartesiano_nodais(ux_elementos, ux_elementos, ordem=2)
                     produtos_uyuy = produto_cartesiano_nodais(uy_elementos, uy_elementos, ordem=2)
-                    ududx=calcula_termo_convectivo(produtos_uxux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_ux)
-                    vdudy=calcula_termo_convectivo(produtos_uxuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_ux)
-                    termo_convectivo_x=ududx+vdudy
-                    udvdx=calcula_termo_convectivo(produtos_uyux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_uy)
-                    vdvdy=calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
-                    termo_convectivo_y=udvdx+vdvdy
-                    vetor_convectivo=np.concatenate((termo_convectivo_x, termo_convectivo_y))
-                elif formulacao=="E": ###Matrizes que aplicadas em um vetor w, calculam udw/dx+vdw/dy (o termo convectivo)
+                    ududx = calcula_termo_convectivo(produtos_uxux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_ux)
+                    vdudy = calcula_termo_convectivo(produtos_uxuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_ux)
+                    termo_convectivo_x = ududx + vdudy
+                    udvdx = calcula_termo_convectivo(produtos_uyux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_uy)
+                    vdvdy = calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
+                    termo_convectivo_y = udvdx + vdvdy
+                    vetor_convectivo = np.concatenate((termo_convectivo_x, termo_convectivo_y))
+                elif formulacao == "E":  ###Matrizes que aplicadas em um vetor w, calculam udw/dx+vdw/dy (o termo convectivo)
                     # mat_uddx=self.monta_matriz_convectiva(u_n[:,0], D_x,  nos_dirichlet=nos_dirich_ux)
                     # mat_vddy=self.monta_matriz_convectiva(u_n[:,1], D_y,  nos_dirichlet=nos_dirich_ux)
-                    mat_uddx=tf.sparse.reduce_sum(tensor_conv_Dx*u_n[:,0],axis=-1, output_is_sparse=True)
-                    mat_vddy=tf.sparse.reduce_sum(tensor_conv_Dy*u_n[:,1],axis=-1, output_is_sparse=True)
-                    mat_convectiva_tf=tf.sparse.add(mat_uddx, mat_vddy)
-                    mat_conv=ssp.coo_matrix((mat_convectiva_tf.values, (mat_convectiva_tf.indices[:,0], mat_convectiva_tf.indices[:,1])), shape=(len(self.nos), len(self.nos)))
-                    A_u_ast=ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_conv, None], [None, matriz_bloco1 + A_dirich_uy+ mat_conv]], format="csr")
-                elif formulacao=="F":
-                    mat_uddx=matriz_diagonal(u_n[:,0])@mat_gradu_x_o2
-                    mat_vddy=matriz_diagonal(u_n[:,1])@mat_gradu_y_o2
-                    mat_conv=mat_uddx+mat_vddy
+                    mat_uddx = tf.sparse.reduce_sum(tensor_conv_Dx * u_n[:, 0], axis=-1, output_is_sparse=True)
+                    mat_vddy = tf.sparse.reduce_sum(tensor_conv_Dy * u_n[:, 1], axis=-1, output_is_sparse=True)
+                    mat_convectiva_tf = tf.sparse.add(mat_uddx, mat_vddy)
+                    mat_conv = ssp.coo_matrix((mat_convectiva_tf.values, (mat_convectiva_tf.indices[:, 0], mat_convectiva_tf.indices[:, 1])), shape=(len(self.nos), len(self.nos)))
+                    A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_conv, None], [None, matriz_bloco1 + A_dirich_uy + mat_conv]], format="csr")
+                elif formulacao == "F":
+                    mat_uddx = matriz_diagonal(u_n[:, 0]) @ mat_gradu_x_o2
+                    mat_vddy = matriz_diagonal(u_n[:, 1]) @ mat_gradu_y_o2
+                    mat_conv = mat_uddx + mat_vddy
                     A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_conv, None], [None, matriz_bloco1 + A_dirich_uy + mat_conv]], format="csr")
 
             else:
-                vetor_convectivo=0
-            if formulacao=="A":
+                vetor_convectivo = 0
+            if formulacao == "A":
                 vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
                 b_u_ast = vetor_un / dt - vetor_gradp - vetor_convectivo + vetor_dirich_u
-            elif formulacao=="B":
+            elif formulacao == "B":
                 b_u_ast = vetor_un / dt - vetor_convectivo + vetor_dirich_u
-            elif formulacao=="C":
+            elif formulacao == "C":
                 vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
                 b_u_ast = vetor_un / dt - vetor_gradp + vetor_dirich_u
-            elif formulacao=="D":
+            elif formulacao == "D":
                 vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
-                vetor_difusivo= np.concatenate(((mat_lap_o2/Re) @ u_n[:, 0], (mat_lap_o2/Re) @ u_n[:, 1]))
-                b_u_ast = vetor_un / dt - vetor_gradp - vetor_convectivo + (1/2)*vetor_difusivo + vetor_dirich_u
-            elif formulacao in ("E","F"):
+                vetor_difusivo = np.concatenate(((mat_lap_o2 / Re) @ u_n[:, 0], (mat_lap_o2 / Re) @ u_n[:, 1]))
+                b_u_ast = vetor_un / dt - vetor_gradp - vetor_convectivo + (1 / 2) * vetor_difusivo + vetor_dirich_u
+            elif formulacao in ("E", "F"):
                 vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
                 b_u_ast = vetor_un / dt - vetor_gradp + vetor_dirich_u
-            u_ast = ssp.linalg.spsolve(A_u_ast,b_u_ast)
+            u_ast = ssp.linalg.spsolve(A_u_ast, b_u_ast)
 
             u_ast = u_ast.reshape((2, len(self.nos))).T
 
@@ -1108,14 +1113,14 @@ class FEA(object):
             p_ast = ssp.linalg.spsolve(A_p, b_p)
 
             ##Calculando p_n+1
-            if formulacao in ("A","C", "D", "E","F"):
+            if formulacao in ("A", "C", "D", "E", "F"):
                 p = p_n + p_ast
-            elif formulacao=="B":
-                p=p_ast.copy()
+            elif formulacao == "B":
+                p = p_ast.copy()
 
             ##Calculando u_n+1
             vetor_u_ast = np.concatenate((mat_integracao_o2 @ u_ast[:, 0], mat_integracao_o2 @ u_ast[:, 1]))
-            vetor_gradp = np.concatenate((mat_gradp_x @ p_ast, mat_gradp_y @ p_ast)) ##Na formulacao B, p_ast eh o proprio p
+            vetor_gradp = np.concatenate((mat_gradp_x @ p_ast, mat_gradp_y @ p_ast))  ##Na formulacao B, p_ast eh o proprio p
             b_u = vetor_u_ast / dt - vetor_gradp + vetor_dirich_u
             u = ssp.linalg.spsolve(A_u, b_u)
             u = u.reshape((2, len(self.nos))).T
@@ -1126,7 +1131,7 @@ class FEA(object):
                 print(f"Velocidade media: {np.average(u, axis=0)}")
                 print(f"Velocidade maxima: {np.max(np.abs(u), axis=0)}")
                 print(f"Pressao media: {np.average(p)}")
-                if formulacao=="D":
+                if formulacao == "D":
                     print(f"Termo convectivo maximo: {np.max(np.abs(vetor_convectivo))}")
                     print(f"Termo difusivo maximo: {np.max(np.abs(vetor_difusivo))}")
 
@@ -1141,30 +1146,29 @@ class FEA(object):
                 print(f"Erro RMS: {np.sqrt(np.average(erro ** 2, axis=0))}")
                 print(f"Erro medio: {np.average(erro, axis=0)}")
             ###Salvando os valores calculados
-            if cont_salvar==salvar_cada:
-                cont_salvar=0
-                casas_decimais= int(np.ceil(-np.log10(dt)))
-                t_nominal=np.round(t, casas_decimais)
+            if cont_salvar == salvar_cada:
+                cont_salvar = 0
+                casas_decimais = int(np.ceil(-np.log10(dt)))
+                t_nominal = np.round(t, casas_decimais)
                 resultados[t_nominal] = {"u": u, "u*": u_ast, "p": p, "p*": p_ast}
                 tempos_salvos.append(t_nominal)
-                if len(tempos_salvos)>=2:
-                    dif_u=resultados[tempos_salvos[-1]]["u"]-resultados[tempos_salvos[-2]]["u"]
-                    dif_p=resultados[tempos_salvos[-1]]["p"]-resultados[tempos_salvos[-2]]["p"]
+                if len(tempos_salvos) >= 2:
+                    dif_u = resultados[tempos_salvos[-1]]["u"] - resultados[tempos_salvos[-2]]["u"]
+                    dif_p = resultados[tempos_salvos[-1]]["p"] - resultados[tempos_salvos[-2]]["p"]
                     if np.all(np.isclose(dif_u, 0, atol=1E-3)) and np.all(np.isclose(dif_p, 0, atol=1E-3)):
                         print(f"Convergencia atingida em t={t_nominal}")
-                        resultados[T]=resultados[tempos_salvos[-1]]
+                        resultados[T] = resultados[tempos_salvos[-1]]
                         break
 
-            cont_salvar+=1
+            cont_salvar += 1
 
             u_n = u.copy()
             p_n = p.copy()
-        tfinal=time.process_time()
+        tfinal = time.process_time()
         print(f"Tempo para montagem das matrizes: {t2 - t1:.2f} s")
         print(f"Tempo para execucao dos passos temporais: {tfinal - t2:.2f} s")
         print(f"Tempo total: {tfinal - t1:.2f} s")
         return resultados
-
 
     def localiza_elemento(self, x, y):
         '''Dada um ponto, localiza em que elemento da malha ele se encontra'''
@@ -1173,7 +1177,7 @@ class FEA(object):
         x0, y0 = pontos[:, 0, :2].T  # vetor de pontos 0 de cada elemento
         x1, y1 = pontos[:, 1, :2].T
         x2, y2 = pontos[:, 2, :2].T
-        pontos = None #apenas liberando da memoria o vetor de pontos
+        pontos = None  # apenas liberando da memoria o vetor de pontos
         alfa = ((x - x0) * (y2 - y0) - (x2 - x0) * (y - y0)) / self.dets_lin  # vetor de coordenadas alfa do ponto em cada elemento
         beta = ((x1 - x0) * (y - y0) - (x - x0) * (y1 - y0)) / self.dets_lin  # vetor de coordenadas beta do ponto em cada elemento
         try:
@@ -1185,15 +1189,14 @@ class FEA(object):
     def localiza_grade(self, x, y):
         '''Dada uma grade de pontos, localiza em que elemento da malha cada ponto se encontra'''
 
-        localizacoes=np.zeros((len(x), len(y)), dtype=int)
+        localizacoes = np.zeros((len(x), len(y)), dtype=int)
         for i, xi in enumerate(x):
             for j, yj in enumerate(y):
                 try:
-                    localizacoes[i, j]=self.localiza_elemento(xi, yj)
+                    localizacoes[i, j] = self.localiza_elemento(xi, yj)
                 except ElementoNaoEncontrado:
-                    localizacoes[i, j]=-1
+                    localizacoes[i, j] = -1
         return localizacoes
-
 
     def interpola(self, x, u, ordem=1):
         '''Interpola a solucao u para um ponto (x,y) qualquer
@@ -1222,7 +1225,7 @@ class FEA(object):
         :param u: array_like N×2 ou N×1. Array de valores da solucao nos nos da malha
         :param ordem: int. Ordem do elemento em que se deseja interpolar a solucao
         '''
-        if elemento==-1:
+        if elemento == -1:
             return np.nan
         if ordem == 1:
             elementos = self.elementos_o1
@@ -1246,96 +1249,97 @@ class FEA(object):
         if ordem == 2:
             elementos = self.elementos
             nos = elementos[elemento]
-            p=6
+            p = 6
         else:
             raise ValueError(f"Elementos de ordem {ordem} nao sao suportados")
-        l=elemento
+        l = elemento
         # if len(x.shape) == 1:  # Nesse caso, foi passado um unico ponto (x,y)
         #     formato_saida=(2,)
         # else:  # nesse caso, foi passado um array de pontos [(x1,y1),(x2,y2),...]
         #     formato_saida = (len(x), 2)
-        u1_elemento=u1[elementos[l]]
-        gama_elemento=gama[elementos[l]]
-        grads=np.sum([self.grad_N_rel(q,l,x,ordem)*gama_elemento[q] for q in range(6)],axis=0)
-        if len(grads.shape)==1: grads=grads.reshape((1,grads.shape[0]))
-        conv_x=np.sum([u1_elemento[q,0]*grads[:,0] for q in range(p)],axis=0)
-        conv_y=np.sum([u1_elemento[q,1]*grads[:,1] for q in range(p)],axis=0)
-        conveccoes=conv_x+conv_y
+        u1_elemento = u1[elementos[l]]
+        gama_elemento = gama[elementos[l]]
+        grads = np.sum([self.grad_N_rel(q, l, x, ordem) * gama_elemento[q] for q in range(6)], axis=0)
+        if len(grads.shape) == 1: grads = grads.reshape((1, grads.shape[0]))
+        conv_x = np.sum([u1_elemento[q, 0] * grads[:, 0] for q in range(p)], axis=0)
+        conv_y = np.sum([u1_elemento[q, 1] * grads[:, 1] for q in range(p)], axis=0)
+        conveccoes = conv_x + conv_y
         return conveccoes
 
-
-
-
-    def calcula_forcas(self, p, u, contorno="af", Re=1., debug=True):
-        '''Calcula as forcas de arrasto e sustentacao'''
-        mu=1/Re
-        arestas=self.arestas_cont_o1[contorno]
-        forcas=np.zeros((len(arestas),2))
-        posicoes=np.zeros((len(arestas),2))
-        tensoes=np.zeros((len(arestas),2))
+    def calcula_forcas(self, p, u, contorno="af", Re=1., viscosidade=True, debug=False):
+        '''Calcula as forcas de arrasto e sustentacao
+        :param viscosidade: bool. Se True, considera a viscosidade do escoamento. Se False, considera a forca completa, devida ao atrito e a pressao. Caso contrario, considera so a pressao'''
+        mu = 1 / Re
+        arestas = self.arestas_cont_o1[contorno]
+        forcas = np.zeros((len(arestas), 2))
+        posicoes = np.zeros((len(arestas), 2))
+        tensoes = np.zeros((len(arestas), 2))
         for i in range(len(arestas)):
-            a=arestas[i]
+            a = arestas[i]
             ##Encontrando o elemento a que pertence a aresta
 
-            l=np.intersect1d(np.where(self.elementos_o1==a[0])[0], np.where(self.elementos_o1==a[1])[0])[0]
-            coeficientes_o2=self.coefs_o2[l] ##matriz de coeficientes da funcao de forma de cada no
-            coeficientes_o1=self.coefs_o1[l]
+            l = np.intersect1d(np.where(self.elementos_o1 == a[0])[0], np.where(self.elementos_o1 == a[1])[0])[0]
+            coeficientes_o2 = self.coefs_o2[l]  ##matriz de coeficientes da funcao de forma de cada no
+            coeficientes_o1 = self.coefs_o1[l]
             ##Definindo os campos de velocidade e pressao no elemento
-            u_local=u[self.elementos[l]] ##vetor de velocidades do elemento
-            p_local=p[self.mascara_nos_o1[self.elementos_o1[l]]] ##vetor de pressoes do elemento
-            aux,bux,cux,dux,eux,fux=(u_local[:,0]*coeficientes_o2.T).sum(axis=1) ##coeficientes (a,b,c...) da funcao de forma ponderada pela velocidade em cada no
+            u_local = u[self.elementos[l]]  ##vetor de velocidades do elemento
+            p_local = p[self.mascara_nos_o1[self.elementos_o1[l]]]  ##vetor de pressoes do elemento
+            aux, bux, cux, dux, eux, fux = (u_local[:, 0] * coeficientes_o2.T).sum(axis=1)  ##coeficientes (a,b,c...) da funcao de forma ponderada pela velocidade em cada no
             auy, buy, cuy, duy, euy, fuy = (u_local[:, 1] * coeficientes_o2.T).sum(axis=1)
-            ap,bp,cp=(p_local*coeficientes_o1.T).sum(axis=1) ##coeficientes (a,b,c...) da funcao de forma ponderada pela pressao em cada no
+            ap, bp, cp = (p_local * coeficientes_o1.T).sum(axis=1)  ##coeficientes (a,b,c...) da funcao de forma ponderada pela pressao em cada no
 
             ##definindo a geometria
-            (x0,y0), (x1,y1)=self.x_nos[a,:2]-self.x_nos[self.elementos[l,0],:2] #posicao de inicio e fim da aresta, relativo ao primeiro ponto do elemento
-            comprimento=np.linalg.norm([x1-x0, y1-y0]) ##comprimento da aresta
-            ponto_medio_rel=np.array([x0+x1,y0+y1])/2 ##posicao media da aresta
-            ponto_medio=ponto_medio_rel+self.x_nos[self.elementos[l,0],:2]
+            (x0, y0), (x1, y1) = self.x_nos[a, :2] - self.x_nos[self.elementos[l, 0], :2]  # posicao de inicio e fim da aresta, relativo ao primeiro ponto do elemento
+            comprimento = np.linalg.norm([x1 - x0, y1 - y0])  ##comprimento da aresta
+            ponto_medio_rel = np.array([x0 + x1, y0 + y1]) / 2  ##posicao media da aresta
+            ponto_medio = ponto_medio_rel + self.x_nos[self.elementos[l, 0], :2]
 
-            normal=np.array([y1-y0, -(x1-x0)]) ##vetor normal a aresta
-            normal=normal/np.linalg.norm(normal) ##normalizando o vetor normal
-            terceiro_no=np.setdiff1d(self.elementos_o1[l], a)[0] ##no que nao pertence a aresta
-            normal*=np.sign((self.x_nos[terceiro_no,:2]-ponto_medio)@normal) ##garantindo que a normal aponta para fora do objeto, ou seja, para dentro do ecoamento
+            normal = np.array([y1 - y0, -(x1 - x0)])  ##vetor normal a aresta
+            normal = normal / np.linalg.norm(normal)  ##normalizando o vetor normal
+            terceiro_no = np.setdiff1d(self.elementos_o1[l], a)[0]  ##no que nao pertence a aresta
+            normal *= np.sign((self.x_nos[terceiro_no, :2] - ponto_medio) @ normal)  ##garantindo que a normal aponta para fora do objeto, ou seja, para dentro do ecoamento
             if not debug:
-                ##calculo dos coeficientes da funcao linear que representa cada componente da tensao
-                coeficientes_sigma=np.zeros((2,2,3), dtype=np.float64) #em cada entrada, temos o vetor de coeficientes (a,b,c) daquela componente de tensao
-                coeficientes_sigma[0,0]=(2*bux*mu- ap, 4*dux*mu-bp, 2*fux*mu-cp)
-                coeficientes_sigma[0,1]=(2*(buy+cux)*mu, (4*duy+2*fux)*mu, (4*euy+2*fuy)*mu)
-                coeficientes_sigma[1,0]=coeficientes_sigma[0,1] # A tensao eh simetrica
-                coeficientes_sigma[1,1] = (2*cuy*mu-ap, 2*fuy*mu-bp, 4*euy*mu-cp)
-                a_sigma,b_sigma,c_sigma=coeficientes_sigma.transpose((2,0,1))
-                integral_sigma=a_sigma+b_sigma*x0+c_sigma*y0+(b_sigma*(x1-x0)+c_sigma*(y1-y0))/2
-            elif debug:
                 ##Calcula somente a tensao no ponto medio da aresta
-                sigma=np.zeros((2,2),dtype=np.float64)
-                x,y=ponto_medio_rel
-                # sigma[0,0]=2*mu*(bux+2*dux*x+fux*y)-(ap+bp*x+cp*y)
-                # sigma[0,1]=mu*(2*buy+2*cux+4*duy*x+4*eux*y+2*fux*x+2*fuy*y)
-                # sigma[1,0]=sigma[0,1]
-                # sigma[1,1]=2*mu*(cuy+2*euy*y+fuy*x)-(ap+bp*x+cp*y)
-                sigma[0,0]=-(ap+bp*x+cp*y)
-                sigma[1,1]=-(ap+bp*x+cp*y)
-                integral_sigma=sigma
+                sigma = np.zeros((2, 2), dtype=np.float64)
+                x, y = ponto_medio_rel
+                if viscosidade:
+                    sigma[0, 0] = -(ap + bp * x + cp * y) + 2 * mu * (bux + 2 * dux * x + fux * y)
+                    sigma[0, 1] = mu * ((cux + 2 * eux * y + fux * x) + (buy + 2 * duy * x + fuy * y))
+                    sigma[1, 0] = sigma[0, 1]
+                    sigma[1, 1] = -(ap + bp * x + cp * y) + 2 * mu * (cuy + 2 * euy * y + fuy * x)
+                else:
+                    sigma[0, 0] = -(ap + bp * x + cp * y)
+                    sigma[1, 1] = -(ap + bp * x + cp * y)
+                media_sigma = sigma
 
-            tensao=integral_sigma@normal
-            forca=tensao*comprimento
-            forcas[i]=forca
-            posicoes[i]=ponto_medio
-            tensoes[i]=tensao
+            elif debug:
+                ##calculo dos coeficientes da funcao linear que representa cada componente da tensao
+                coeficientes_sigma = np.zeros((2, 2, 3), dtype=np.float64)  # em cada entrada, temos o vetor de coeficientes (a,b,c) daquela componente de tensao
+                coeficientes_sigma[0, 0] = (2 * bux * mu - ap, 4 * dux * mu - bp, 2 * fux * mu - cp)
+                coeficientes_sigma[0, 1] = ((buy + cux) * mu, (2 * duy + fux) * mu, (2 * euy +  fuy) * mu)
+                coeficientes_sigma[1, 0] = coeficientes_sigma[0, 1]  # A tensao eh simetrica
+                coeficientes_sigma[1, 1] = (2 * cuy * mu - ap, 2 * fuy * mu - bp, 4 * euy * mu - cp)
+                a_sigma, b_sigma, c_sigma = coeficientes_sigma.transpose((2, 0, 1))
+                media_sigma = a_sigma + b_sigma * x0 + c_sigma * y0 + (b_sigma * (x1 - x0) + c_sigma * (y1 - y0)) / 2
+
+            tensao = media_sigma @ normal
+            forca = tensao * comprimento
+            forcas[i] = forca
+            posicoes[i] = ponto_medio
+            tensoes[i] = tensao
         return forcas, posicoes, tensoes
+
 
 class ElementoNaoEncontrado(Exception):
     pass
 
 
-
-
 if __name__ == "__main__":
     import pickle
     from RepresentacaoEscoamento import plotar_momento, plotar_perfis
-    nome_malha, tag_fis=Malha.malha_quadrada("teste", 0.1)
-    Problema=FEA(nome_malha, tag_fis)
+
+    nome_malha, tag_fis = Malha.malha_quadrada("teste", 0.1)
+    Problema = FEA(nome_malha, tag_fis)
     ux_dirichlet = [
         (Problema.nos_cont["esquerda"], lambda x: 1.),
         (Problema.nos_cont["superior"], lambda x: 0.),
@@ -1349,7 +1353,7 @@ if __name__ == "__main__":
     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0),
                    # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
                    ]
-    resultados=Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=1, dt=0.01, Re=1, salvar_cada=10, formulacao="C", debug=True)
+    resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=1, dt=0.01, Re=1, salvar_cada=10, formulacao="C", debug=True)
 
     # tag_fis = {'esquerda': 1, 'direita': 2, 'superior': 3, 'inferior': 4, 'escoamento': 5}
     # nome_malha = "Malha/teste 5-1.msh"
@@ -1361,8 +1365,6 @@ if __name__ == "__main__":
     #     for j in range(6):
     #         if np.any(prod[i,j]!=matriz_teste1[:,i]*matriz_teste2[:,j]):
     #             print(f"Erro no elemento ({i}, {j}")
-
-
 
     # nome_malha = "Malha/teste.msh"
     # for ordem in (1, 2,):

@@ -51,14 +51,16 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     tag_fis = {}  # tags dos grupos fisicos
     # af_tamanho = 1 / n_pontos_contorno
     # tamanho = 10 * af_tamanho
+    x_min,x_max=-10,11
+    y_min,y_max=-10,10
     ##Inicializando o gmsh
     gmsh.initialize()
     gmsh.model.add(nome_modelo)  # adiciona um modelo
     gmsh.model.set_current(nome_modelo)  # define o modelo atual
-    geo.addPoint(-2, -2, 0, tamanho, tag=1)  # ponto inferior esquerdo
-    geo.addPoint(-2, 2, 0, tamanho, tag=2)  # ponto superior esquerdo
-    geo.addPoint(3, -2, 0, tamanho, tag=3)  # ponto inferior direito
-    geo.addPoint(3, 2, 0, tamanho, tag=4)  # ponto superior direito
+    geo.addPoint(x_min, y_min, 0, tamanho, tag=1)  # ponto inferior esquerdo
+    geo.addPoint(x_min,y_max, 0, tamanho, tag=2)  # ponto superior esquerdo
+    geo.addPoint(x_max, y_min, 0, tamanho, tag=3)  # ponto inferior direito
+    geo.addPoint(x_max, y_max, 0, tamanho, tag=4)  # ponto superior direito
     geo.add_line(1, 2, tag=contornos["esquerda"])
     geo.add_line(3, 4, tag=contornos["direita"])
     geo.add_line(1, 3, tag=contornos["inferior"])

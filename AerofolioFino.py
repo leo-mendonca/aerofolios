@@ -245,6 +245,8 @@ def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None) :
         dframe.to_csv(path_salvar)
     return dframe
 
+NACA4412 = AerofolioFinoNACA4([0.04, 0.4, 0.12], 0, 1)
+
 
 if __name__ == "__main__" :
     plt.rcParams["axes.grid"] = True

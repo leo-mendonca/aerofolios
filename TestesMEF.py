@@ -43,29 +43,30 @@ def numeracao_nos():
     plt.show(block=False)
     return
 
-def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao="A", T=3, dt=0.01, Re=1.):
-    cilindro = AerofolioFino.Cilindro(.5, 0, 1)
-    nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n, tamanho=tamanho)
-    Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
-    ux_dirichlet = [
-        (Problema.nos_cont["esquerda"], lambda x: 1.),
-        (Problema.nos_cont["superior"], lambda x: 1.),
-        (Problema.nos_cont["inferior"], lambda x: 1.),
-        (Problema.nos_cont["af"], lambda x: 0.),
-    ]
-    uy_dirichlet = [
-        (Problema.nos_cont["esquerda"], lambda x: 0.),
-        (Problema.nos_cont["superior"], lambda x: 0.),
-        (Problema.nos_cont["inferior"], lambda x: 0.),
-        (Problema.nos_cont["af"], lambda x: 0.),
-    ]
-    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: p0),]
+def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao="F", T=3, dt=0.01, Re=1.):
 
-    nome_diretorio = f"Saida/Cilindro/Cilindro n={n} h={tamanho} dt={dt} Re={Re} {formulacao}"
+
+    nome_diretorio = f"Saida/Cilindro/Cilindro n={n} h={tamanho} dt={dt} Re={Re} T={T} {formulacao}"
     if executa:
+        cilindro = AerofolioFino.Cilindro(.5, 0, 1)
+        nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n, tamanho=tamanho)
+        Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
+        ux_dirichlet = [
+            (Problema.nos_cont["esquerda"], lambda x: 1.),
+            (Problema.nos_cont["superior"], lambda x: 1.),
+            (Problema.nos_cont["inferior"], lambda x: 1.),
+            (Problema.nos_cont["af"], lambda x: 0.),
+        ]
+        uy_dirichlet = [
+            (Problema.nos_cont["esquerda"], lambda x: 0.),
+            (Problema.nos_cont["superior"], lambda x: 0.),
+            (Problema.nos_cont["inferior"], lambda x: 0.),
+            (Problema.nos_cont["af"], lambda x: 0.),
+        ]
+        p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: p0), ]
         nome_diretorio = cria_diretorio(nome_diretorio)
-        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} {formulacao}.zip")
-        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., p0=p0)
+        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
+        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., p0=p0, formulacao=formulacao)
         # with open("Picles/resultados_forca.pkl", "wb") as f:
         #     pickle.dump((Problema, resultados), f)
         salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo)
@@ -76,16 +77,37 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
 
         # with open("Picles/resultados_forca.pkl", "rb") as f:
         #     Problema, resultados = pickle.load(f)
-        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} {formulacao}.zip")
+        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
         Problema, u, p, nome_malha = carregar_resultados(nome_arquivo)
 
-    forca, x, tensao=Problema.calcula_forcas(p,u, debug=debug)
+    forca, x, tensao=Problema.calcula_forcas(p,u, debug=debug, viscosidade=True)
+    forca_p, x, tensao_p=Problema.calcula_forcas(p, u, debug=debug, viscosidade=False)
     F=np.sum(forca,axis=0)
+    F_p=np.sum(forca_p,axis=0)
+    rho=1.
+    U0=1.
+    D=1.
+    c_d=F[0]/(0.5*rho*U0**2*D)
+    c_l=F[1]/(0.5*rho*U0**2*D)
     x_rel=x-np.array([0.5,0])
     M=np.sum(np.cross(x_rel,forca),axis=0)
-    print(f"Forca de arrasto: {F[0]}")
-    print(f"Forca de sustentacao: {F[1]}")
-    print(f"Momento: {M}")
+    c_M=M/(0.5*rho*U0**2*D**2)
+    pressao_a=Problema.interpola(np.array([0.,0.]),p,ordem=1)
+    pressao_b=Problema.interpola(np.array([1.,0.]),p,ordem=1)
+    c_p_a=pressao_a/(0.5*rho*U0**2)
+    c_p_b=pressao_b/(0.5*rho*U0**2)
+
+
+    c_d_p = F_p[0] / (0.5)
+    c_l_p = F_p[1] / (0.5)
+    print(f"Coeficiente de arrasto devido a pressao: {c_d_p}")
+    print(f"Coeficiente de arrasto devido ao atrito: {c_d-c_d_p}")
+    print(f"Coeficiente de arrasto total: {c_d}")
+    print(f"Coeficiente de sustentacao devido a pressao: {c_l_p}")
+    print(f"Coeficiente de sustentacao total: {c_l}")
+    print(f"Coeficiente de Momento: {c_M}")
+    print(f"Coeficiente de pressao de estagnacao: {c_p_a}")
+    print(f"Coeficiente de pressao de saida: {c_p_b}")
     vetor_F=forca/200
     vetor_tensao=tensao/200
     plt.figure()
@@ -108,7 +130,7 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
     return forca,x
 
 
-def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, formulacao="A"):
+def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, formulacao="F"):
 
     if executa :
         nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", tamanho, (5, 1))
@@ -165,7 +187,7 @@ def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, form
     # plotar_momento(Problema, resultados, 3)
     plt.show(block=False)
 
-def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formulacao="A", debug=False):
+def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formulacao="F", debug=False):
 
 
     nome_diretorio=os.path.join("Saida","Cavidade",f"Cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}")
@@ -291,6 +313,23 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
     dframe_erros.to_csv(path_salvar+" erros.csv")
     return dframe_erros
 
+def roda_aerofolio_simples(aerofolio=AerofolioFino.NACA4412,h=0.01, dt=0.01, T=3, Re=1, executa=True, formulacao="F"):
+    '''Executa um caso de aerofolio e retorna os vetores u e p, alem do objeto FEA, sem fazer plot'''
+    nome_malha, tag_fis=Malha.malha_aerofolio(aerofolio, n_pontos_contorno=100, tamanho=h)
+
+
+def validacao_tamanho_af(h_min=0.01,h_max=0.5, Re=1, dt=0.01, T=30, formulacao="F", aerofolio=AerofolioFino.NACA4412, executa=True):
+    '''Calcula a solucao do aerofolio para diferentes tamanhos de malha e compara entre si os resultados'''
+    tamanhos=np.logspace(np.log10(h_min),np.log10(h_max), 10)
+    coefs_arrasto=np.zeros(len(tamanhos))
+    coefs_sustentacao=np.zeros(len(tamanhos))
+    coefs_momento=np.zeros(len(tamanhos))
+    for i,h in enumerate(tamanhos):
+        pass ##TODO completar essa funcao e plotar os resultados
+
+
+
+
 
 if __name__ == "__main__":
     # teste_poiseuille(tamanho=0.1, p0=0,  executa=True, dt=0.01, T=2, Re=1, formulacao="A")
@@ -304,22 +343,29 @@ if __name__ == "__main__":
     # teste_poiseuille(0.1, 0, 1, 0.01, 2, True, "E")
     # plt.show(block=True)
     # teste_cavidade(tamanho=0.1, p0=0, executa=True, dt=0.01, T=30, Re=1, formulacao="F", debug=False)
-    for Re in (100,400,0.01,10,1000):
-        teste_cavidade(tamanho=0.02, p0=0, executa=True, dt=0.01, T=30, Re=Re, formulacao="F", debug=False)
+    for Re in (0.1,1,5,10):
+        teste_forca(n=500, tamanho=0.5, debug=False, executa=True, formulacao="F", T=20,dt=0.01, Re=Re)
         plt.close("all")
-    erros = compara_cavidade_ref(h=0.02, dt=0.01, T=30, formulacao="F", plota=True)
+    for Re in (0.1,1,5,10):
+        teste_forca(n=500, tamanho=0.5, debug=False, executa=False, formulacao="F", T=20,dt=0.01, Re=Re)
+        plt.close("all")
     plt.show(block=True)
-    # for Re in (0.01,10,100,400,1000):
-    #     teste_cavidade(tamanho=0.03, p0=0, executa=True, dt=0.01, T=10, Re=Re, formulacao="A", debug=True)
+    # for Re in (100,400,0.01,10,1000):
+    #     teste_cavidade(tamanho=0.02, p0=0, executa=True, dt=0.01, T=30, Re=Re, formulacao="F", debug=False)
     #     plt.close("all")
-    erros=compara_cavidade_ref(h=0.05, dt=0.01, T=20, formulacao="E", plota=True)
-    plt.show(block=True)
-    for Re in (400,1000):
-        teste_cavidade(tamanho=0.01, p0=0, executa=True, dt=0.01, T=1, Re=Re, formulacao="A")
-        plt.close("all")
-    # teste_forca(n=50, tamanho=0.3, debug=False, executa=True)
-    plt.show(block=True)
-    plt.close("all")
-    # teste_forca(n=50, tamanho=0.3, debug=False, executa=False)
-    plt.show(block=False)
-    plt.show()
+    # erros = compara_cavidade_ref(h=0.02, dt=0.01, T=30, formulacao="F", plota=True)
+    # plt.show(block=True)
+    # # for Re in (0.01,10,100,400,1000):
+    # #     teste_cavidade(tamanho=0.03, p0=0, executa=True, dt=0.01, T=10, Re=Re, formulacao="A", debug=True)
+    # #     plt.close("all")
+    # erros=compara_cavidade_ref(h=0.05, dt=0.01, T=20, formulacao="E", plota=True)
+    # plt.show(block=True)
+    # for Re in (400,1000):
+    #     teste_cavidade(tamanho=0.01, p0=0, executa=True, dt=0.01, T=1, Re=Re, formulacao="A")
+    #     plt.close("all")
+    # # teste_forca(n=50, tamanho=0.3, debug=False, executa=True)
+    # plt.show(block=True)
+    # plt.close("all")
+    # # teste_forca(n=50, tamanho=0.3, debug=False, executa=False)
+    # plt.show(block=False)
+    # plt.show()
