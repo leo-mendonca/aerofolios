@@ -64,11 +64,10 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
             (Problema.nos_cont["af"], lambda x: 0.),
         ]
         p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: p0), ]
+
+        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., p0=p0, formulacao=formulacao)
         nome_diretorio = cria_diretorio(nome_diretorio)
         nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
-        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., p0=p0, formulacao=formulacao)
-        # with open("Picles/resultados_forca.pkl", "wb") as f:
-        #     pickle.dump((Problema, resultados), f)
         salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo)
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u = resultados[T]["u"]
@@ -80,8 +79,8 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
         nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
         Problema, u, p, nome_malha = carregar_resultados(nome_arquivo)
 
-    forca, x, tensao=Problema.calcula_forcas(p,u, debug=debug, viscosidade=True)
-    forca_p, x, tensao_p=Problema.calcula_forcas(p, u, debug=debug, viscosidade=False)
+    forca, x, tensao=Problema.calcula_forcas(p,u, debug=debug, viscosidade=True, Re=Re)
+    forca_p, x, tensao_p=Problema.calcula_forcas(p, u, debug=debug, viscosidade=False, Re=Re)
     F=np.sum(forca,axis=0)
     F_p=np.sum(forca_p,axis=0)
     rho=1.
@@ -108,6 +107,7 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
     print(f"Coeficiente de Momento: {c_M}")
     print(f"Coeficiente de pressao de estagnacao: {c_p_a}")
     print(f"Coeficiente de pressao de saida: {c_p_b}")
+    coeficientes=c_d_p, c_d-c_d_p, c_d, c_l, c_M, c_p_a, c_p_b
     vetor_F=forca/200
     vetor_tensao=tensao/200
     plt.figure()
@@ -127,7 +127,7 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
     iniciais=np.linspace([Problema.x_min, Problema.y_min+0.1], [Problema.x_min, Problema.y_max-0.1], 20)
     linhas=RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=iniciais, resolucao=tamanho/10, path_salvar=os.path.join(nome_diretorio,"Correntes.png"))
     plt.show(block=False)
-    return forca,x
+    return forca,x, coeficientes
 
 
 def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, formulacao="F"):
