@@ -44,15 +44,15 @@ def malha_retangular(nome_modelo, tamanho, formato, ordem=2) :
     return nome_arquivo, tag_fis
 
 
-def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao, ordem=2, tamanho=tamanho_padrao) :
+def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao, ordem=2, tamanho=tamanho_padrao, folga=10) :
     '''Gera uma malha no gmsh correspondendo a regiao em torno do aerofolio'''
     contornos = {"esquerda" : 1, "direita" : 2, "superior" : 3, "inferior" : 4, }
     # n_pontos_contorno = 1000
     tag_fis = {}  # tags dos grupos fisicos
     # af_tamanho = 1 / n_pontos_contorno
     # tamanho = 10 * af_tamanho
-    x_min,x_max=-10,11
-    y_min,y_max=-10,10
+    x_min,x_max=-folga,1+folga
+    y_min,y_max=-folga,+folga
     ##Inicializando o gmsh
     gmsh.initialize()
     gmsh.model.add(nome_modelo)  # adiciona um modelo

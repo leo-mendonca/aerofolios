@@ -246,6 +246,7 @@ def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None) :
     return dframe
 
 NACA4412 = AerofolioFinoNACA4([0.04, 0.4, 0.12], 0, 1)
+NACA4412_5= AerofolioFinoNACA4([0.04, 0.4, 0.12], 5, 1)
 
 
 if __name__ == "__main__" :
