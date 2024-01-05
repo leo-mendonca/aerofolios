@@ -313,7 +313,101 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
     return dframe_erros
 
 
+def validacao_parametros_af(parametro, valores_parametro,n=100, Re=1, dt=0.01, T=30, h=0.5, folga=10, formulacao="F", aerofolio=AerofolioFino.NACA4412, resolucao=0.05, executa=True, plota=True):
+    '''
+    Varia um dos parametros da simulacao para identificar qual valor eh mais adequado
+    :param parametro: ("n","dt","h","folga"). parametro a ser variado
+    '''
+    x_min, x_max, y_min, y_max = -1, 2, -1.5, 1.5
+    x_grade = np.arange(x_min, x_max, resolucao)
+    y_grade = np.arange(y_min, y_max, resolucao)
+    # valores_n = np.logspace(np.log10(n_min), np.log10(n_max), 10).astype(int)
+    coefs_arrasto = np.zeros(len(valores_parametro))
+    coefs_sustentacao = np.zeros(len(valores_parametro))
+    coefs_momento = np.zeros(len(valores_parametro))
+    tempos = np.zeros(len(valores_parametro))
+    vetores_u = []
+    vetores_p = []
+    shape_mapa = (len(valores_parametro), len(x_grade), len(y_grade))
+    mapas_u = np.zeros(shape_mapa, dtype=np.float64)
+    mapas_v = np.zeros(shape_mapa, dtype=np.float64)
+    mapas_p = np.zeros(shape_mapa, dtype=np.float64)
 
+    if executa:
+        nome_diretorio = cria_diretorio(os.path.join("Saida", "Aerofolio", f"Validacao {parametro} {aerofolio.nome} n={n} h={h} Re={Re} dt={dt} T={T} {formulacao}"))
+    else:
+        nome_diretorio = os.path.join("Saida", "Aerofolio", f"Validacao {parametro} {aerofolio.nome} n={n} h={h} Re={Re} dt={dt} T={T} {formulacao}")
+    for i, param in enumerate(valores_parametro):
+        match parametro:
+            case "n":n = param
+            case "dt":dt = param
+            case "h":h = param
+            case "folga":folga = param
+            case _: raise ValueError(f"Parametro {parametro} invalido")
+        nome_malha, tag_fis = Malha.malha_aerofolio(aerofolio, n_pontos_contorno=n, tamanho=h, folga=folga)
+        Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
+        ux_dirichlet = [
+            (Problema.nos_cont["esquerda"], lambda x: 1.),
+            (Problema.nos_cont["superior"], lambda x: 1.),
+            (Problema.nos_cont["inferior"], lambda x: 1.),
+            (Problema.nos_cont["af"], lambda x: 0.),
+        ]
+        uy_dirichlet = [
+            (Problema.nos_cont["esquerda"], lambda x: 0.),
+            (Problema.nos_cont["superior"], lambda x: 0.),
+            (Problema.nos_cont["inferior"], lambda x: 0.),
+            (Problema.nos_cont["af"], lambda x: 0.),
+        ]
+        p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0), ]
+
+        if executa:
+            t1 = time.process_time()
+            resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., formulacao=formulacao)
+            t2 = time.process_time()
+            u = resultados[T]["u"]
+            p = resultados[T]["p"]
+            salvar_resultados(nome_malha, tag_fis, resultados, os.path.join(nome_diretorio, f"{parametro}={param}.zip"))
+            tempos[i] = t2 - t1
+        else:
+            Problema, u, p, nome_malha = carregar_resultados(os.path.join(nome_diretorio, f"{parametro}={param}.zip"))
+            tempos[i] = 0
+        vetores_u.append(u)
+        vetores_p.append(p)
+        localizacao = Problema.localiza_grade(x_grade, y_grade)
+        (x1, y1), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=x_grade, y_grade=y_grade, local_grade=localizacao, plota=False)
+        (x1, y1), mapa_v = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x_grade, y_grade=y_grade, local_grade=localizacao, plota=False)
+        (x1, y1), mapa_p = RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x_grade, y_grade=y_grade, local_grade=localizacao, plota=False)
+        mapas_u[i] = mapa_u
+        mapas_v[i] = mapa_v
+        mapas_p[i] = mapa_p
+        c_d, c_l, c_M, outros = ElementosFinitos.coeficientes_aerodinamicos(Problema, u, p, Re=Re, x_centro=np.array([0.25, 0.]))
+        coefs_arrasto[i] = c_d
+        coefs_sustentacao[i] = c_l
+        coefs_momento[i] = c_M
+    with open(os.path.join(nome_diretorio, "resultados.pkl"), "wb") as f:
+        pickle.dump((valores_parametro, coefs_arrasto, coefs_sustentacao, coefs_momento, vetores_u, vetores_p, mapas_u, mapas_v, mapas_p, tempos), f)
+    erros_p = mapas_p - mapas_p[-1]
+    eqm_p = np.sqrt(np.nanmean(erros_p ** 2, axis=(1, 2)))
+    e_max_p = np.nanmax(np.abs(erros_p), axis=(1, 2))
+    vies_p = np.nanmean(erros_p, axis=(1, 2))
+    erros_u = mapas_u - mapas_u[-1]
+    eqm_u = np.sqrt(np.nanmean(erros_u ** 2, axis=(1, 2)))
+    e_max_u = np.nanmax(np.abs(erros_u), axis=(1, 2))
+    vies_u = np.nanmean(erros_u, axis=(1, 2))
+    erros_v = mapas_v - mapas_v[-1]
+    eqm_v = np.sqrt(np.nanmean(erros_v ** 2, axis=(1, 2)))
+    e_max_v = np.nanmax(np.abs(erros_v), axis=(1, 2))
+    vies_v = np.nanmean(erros_v, axis=(1, 2))
+    with open(os.path.join(nome_diretorio, "erros.pkl"), "wb") as f:
+        pickle.dump((eqm_p, e_max_p, vies_p, eqm_u, e_max_u, vies_u, eqm_v, e_max_v, vies_v), f)
+    cols = ["c_d", "c_l", "c_M", "eqm_p", "e_max_p", "vies_p", "eqm_u", "e_max_u", "vies_u", "eqm_v", "e_max_v", "vies_v", "t"]
+    indice = valores_parametro
+    array_dataframe = np.array([coefs_arrasto, coefs_sustentacao, coefs_momento, eqm_p, e_max_p, vies_p, eqm_u, e_max_u, vies_u, eqm_v, e_max_v, vies_v, tempos]).T
+    dframe_erros = pd.DataFrame(index=indice, columns=cols, dtype=np.float64, data=array_dataframe)
+    dframe_erros.to_csv(os.path.join(nome_diretorio, "Resultados.csv"))
+    if plota:
+        RepresentacaoEscoamento.plotar_dataframe_analise(dframe_erros, parametro, path_salvar=nome_diretorio)
+    return
 
 
 def validacao_npontos_af(n_min=5, n_max=500, Re=1, dt=0.01, T=30, h=0.5, formulacao="F", aerofolio=AerofolioFino.NACA4412, resolucao=0.05, executa=True, plota=True, picles=False, folga=10):
@@ -338,7 +432,7 @@ def validacao_npontos_af(n_min=5, n_max=500, Re=1, dt=0.01, T=30, h=0.5, formula
         if executa: nome_diretorio=cria_diretorio(os.path.join("Saida", "Aerofolio", f"Validacao n pontos {aerofolio.nome} h={h} Re={Re} dt={dt} T={T} {formulacao}"))
         else: nome_diretorio= os.path.join("Saida", "Aerofolio", f"Validacao n pontos {aerofolio.nome} h={h} Re={Re} dt={dt} T={T} {formulacao}")
         for i, n in enumerate(valores_n):
-            nome_malha, tag_fis = Malha.malha_aerofolio(aerofolio, n_pontos_contorno=int(n), tamanho=h, folga=folga)
+            nome_malha, tag_fis = Malha.malha_aerofolio(aerofolio, n_pontos_contorno=n, tamanho=h, folga=folga)
             Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
             ux_dirichlet = [
                 (Problema.nos_cont["esquerda"], lambda x: 1.),
@@ -404,7 +498,7 @@ def validacao_npontos_af(n_min=5, n_max=500, Re=1, dt=0.01, T=30, h=0.5, formula
     dframe_erros=pd.DataFrame(index=indice,columns=cols,dtype=np.float64, data=array_dataframe)
     dframe_erros.to_csv(os.path.join(nome_diretorio, "Resultados.csv"))
     if plota:
-        RepresentacaoEscoamento.plotar_dataframe_analise_n(dframe_erros, path_salvar=nome_diretorio)
+        RepresentacaoEscoamento.plotar_dataframe_analise(dframe_erros, "n", path_salvar=nome_diretorio)
     return
 
 
@@ -414,6 +508,11 @@ def validacao_npontos_af(n_min=5, n_max=500, Re=1, dt=0.01, T=30, h=0.5, formula
 
 
 if __name__ == "__main__":
+    # af=AerofolioFino.NACA4412_10
+    # nome_malha,tag_fis=Malha.malha_aerofolio(af, n_pontos_contorno=50, tamanho=0.5, folga=3)
+    # Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
+    # plt.triplot(Problema.x_nos[:,0],Problema.x_nos[:,1],Problema.elementos_o1)
+    # plt.show(block=False)
     # teste_poiseuille(tamanho=0.1, p0=0,  executa=True, dt=0.01, T=2, Re=1, formulacao="A")
     # teste_cavidade(tamanho=0.02,  dt=0.01, T=30, Re=10, formulacao="E", executa=True, debug=False)
     # teste_cavidade(tamanho=0.05, dt=0.01,T=20,Re=0.01,executa=False,formulacao="E")
@@ -431,7 +530,10 @@ if __name__ == "__main__":
     # for Re in (0.1, 1, 5, 10):
     #     teste_forca(n=500, tamanho=0.5, debug=False, executa=False, formulacao="F", T=20, dt=0.01, Re=Re)
     #     plt.close("all")
-    validacao_npontos_af(n_min=30, n_max=300, Re=10., dt=0.01, T=30, h=0.5, folga=5, formulacao="F", aerofolio=AerofolioFino.NACA4412_5, resolucao=0.05, executa=True, plota=True, picles=False)
+    valores_folga=np.linspace(1,15,8)
+    for Re in (1,10,100):
+        validacao_parametros_af(parametro="folga", valores_parametro=valores_folga, n=50, Re=Re, dt=0.01, T=30, h=1., formulacao="F", aerofolio=AerofolioFino.NACA4412_10, resolucao=0.05, executa=True, plota=True)
+
     plt.show(block=True)
     # for Re in (100,400,0.01,10,1000):
     #     teste_cavidade(tamanho=0.02, p0=0, executa=True, dt=0.01, T=30, Re=Re, formulacao="F", debug=False)

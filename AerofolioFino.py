@@ -143,8 +143,9 @@ class AerofolioFinoNACA4(AerofolioFino) :
         self.theta_p = np.arccos(1 - 2 * self.const_p)
         self.beta = 1 / self.const_p ** 2 - 1 / (1 - self.const_p) ** 2
         super(AerofolioFinoNACA4, self).__init__(vetor_coeficientes, U0, alfa)
+        alfa_grau=alfa*180/np.pi
         self.volume = 0.6851 * self.const_t  ##Integral de x*espessura(x) entre 0 e 1 (aproximacao!)
-        self.nome = f"NACA-{(self.const_m * 100)}-{(self.const_p * 10)}-{(self.const_t * 100)}-"
+        self.nome = f"NACA-{(self.const_m * 100)}-{(self.const_p * 10)}-{(self.const_t * 100)}-{int(alfa_grau)}°"
 
     ##TODO validar topologia zoada com autointersecao do contorno inferior quando p eh muito pequena ou t eh muito grande
 
@@ -246,7 +247,8 @@ def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None) :
     return dframe
 
 NACA4412 = AerofolioFinoNACA4([0.04, 0.4, 0.12], 0, 1)
-NACA4412_5= AerofolioFinoNACA4([0.04, 0.4, 0.12], 5, 1)
+NACA4412_5= AerofolioFinoNACA4([0.04, 0.4, 0.12], -5*np.pi/180, 1)
+NACA4412_10= AerofolioFinoNACA4([0.04, 0.4, 0.12], -10*np.pi/180, 1)
 
 
 if __name__ == "__main__" :
