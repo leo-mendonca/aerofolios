@@ -222,7 +222,7 @@ def coeficientes_aerodinamicos(Problema, u, p, Re, x_centro):
     c_l = F[1] / (0.5 * rho * U0 ** 2 * D)
     x_rel = posicoes - x_centro
     M = np.sum(np.cross(x_rel, forcas), axis=0)
-    c_M = M / (0.5 * rho * U0 ** 2 * D ** 2)
+    c_M = -M / (0.5 * rho * U0 ** 2 * D ** 2) ##O sentido do momento eh definido como positivo quando movimenta o aerofolio no sentido horario
     pressao_a = Problema.interpola(np.array([0., 0.]), p, ordem=1)
     pressao_b = Problema.interpola(np.array([1., 0.]), p, ordem=1)
     c_p_a = pressao_a / (0.5 * rho * U0 ** 2)
