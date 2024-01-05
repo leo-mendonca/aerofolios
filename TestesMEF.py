@@ -210,7 +210,7 @@ def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formula
             u0 = 0
         resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, formulacao=formulacao, debug=debug, u0=u0)
         nome_diretorio = cria_diretorio(nome_diretorio)
-        nome_arquivo = os.path.join(nome_diretorio, f" cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
+        nome_arquivo = os.path.join(nome_diretorio, f"Cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
         salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo)
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u = resultados[T]["u"]
@@ -224,7 +224,7 @@ def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formula
         # with open(os.path.join("Picles", f"resultados cavidade.pkl h={tamanho} dt={dt} Re={Re} {formulacao}"), "wb") as f :
         #     pickle.dump((Problema, resultados), f)
     else:
-        nome_arquivo = os.path.join(nome_diretorio, f" cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
+        nome_arquivo = os.path.join(nome_diretorio, f"Cavidade h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
         Problema, u, p, nome_malha = carregar_resultados(nome_arquivo)
         # with open(os.path.join("Picles", f"resultados cavidade.pkl h={tamanho} dt={dt} Re={Re} {formulacao}"), "rb") as f :
         #     Problema, resultados = pickle.load(f)
@@ -272,7 +272,7 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
         eixo_v.set_ylim(-1, 1)
     for Re in valores_Re:
         try:
-            arquivo_resultados = os.path.join("Saida", "Cavidade", f"Cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}", f" cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}.zip")
+            arquivo_resultados = os.path.join("Saida", "Cavidade", f"Cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}", f"Cavidade h={h} dt={dt} Re={Re} T={T} {formulacao}.zip")
             Problema, u, p, nome_malha = carregar_resultados(arquivo_resultados)
             dframe_ref = pd.read_csv(arquivo_referencia)
             if Re == "inf":
