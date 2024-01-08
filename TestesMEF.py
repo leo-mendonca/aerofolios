@@ -338,12 +338,11 @@ def validacao_parametros_af(parametro, valores_parametro,n=100, Re=1, dt=0.01, T
     else:
         nome_diretorio = os.path.join("Saida", "Aerofolio", f"Validacao {parametro} {aerofolio.nome} n={n} h={h} Re={Re} dt={dt} T={T} {formulacao}")
     for i, param in enumerate(valores_parametro):
-        match parametro:
-            case "n":n = param
-            case "dt":dt = param
-            case "h":h = param
-            case "folga":folga = param
-            case _: raise ValueError(f"Parametro {parametro} invalido")
+        if parametro == "n": n = param
+        elif parametro == "dt": dt = param
+        elif parametro == "h": h = param
+        elif parametro == "folga": folga = param
+        else: raise ValueError(f"Parametro {parametro} invalido")
         nome_malha, tag_fis = Malha.malha_aerofolio(aerofolio, n_pontos_contorno=n, tamanho=h, folga=folga)
         Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
         ux_dirichlet = [
@@ -432,7 +431,7 @@ def validacao_npontos_af(n_min=5, n_max=500, Re=1, dt=0.01, T=30, h=0.5, formula
         if executa: nome_diretorio=cria_diretorio(os.path.join("Saida", "Aerofolio", f"Validacao n pontos {aerofolio.nome} h={h} Re={Re} dt={dt} T={T} {formulacao}"))
         else: nome_diretorio= os.path.join("Saida", "Aerofolio", f"Validacao n pontos {aerofolio.nome} h={h} Re={Re} dt={dt} T={T} {formulacao}")
         for i, n in enumerate(valores_n):
-            nome_malha, tag_fis = Malha.malha_aerofolio(aerofolio, n_pontos_contorno=n, tamanho=h, folga=folga)
+            nome_malha, tag_fis = Malha.malha_aerofolio(aerofolio, n_pontos_contorno=int(n), tamanho=h, folga=folga)
             Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
             ux_dirichlet = [
                 (Problema.nos_cont["esquerda"], lambda x: 1.),
@@ -518,7 +517,7 @@ if __name__ == "__main__":
     # teste_cavidade(tamanho=0.05, dt=0.01,T=20,Re=0.01,executa=False,formulacao="E")
     # plt.show(block=True)
     # teste_cavidade(tamanho=0.01, p0=0,  executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
-    # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=True, formulacao="A")
+    teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=True, formulacao="F")
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=False, formulacao="A")
     # plt.show(block=True)
     # teste_poiseuille(0.1, 0, 1, 0.01, 2, True, "E")
@@ -530,6 +529,7 @@ if __name__ == "__main__":
     # for Re in (0.1, 1, 5, 10):
     #     teste_forca(n=500, tamanho=0.5, debug=False, executa=False, formulacao="F", T=20, dt=0.01, Re=Re)
     #     plt.close("all")
+
     valores_folga=np.linspace(1,15,8)
     for Re in (1,10,100):
         validacao_parametros_af(parametro="folga", valores_parametro=valores_folga, n=50, Re=Re, dt=0.01, T=30, h=1., formulacao="F", aerofolio=AerofolioFino.NACA4412_10, resolucao=0.05, executa=True, plota=True)
