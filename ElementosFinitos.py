@@ -770,30 +770,6 @@ class FEA(object):
                                 tensores[direcao_derivada][i, l, j, k] = integracao
         return tensores["x"], tensores["y"]
 
-    def monta_matriz_convectiva_ao_vivo(self, u_n_x, tensor_convectivo, nos_dirichlet=[]):
-        '''Monta a matriz que, aplicada no vetor u de velocidades em uma dada direcao, produz o vetor da integracao do tertmo convectivo na equacao'''
-        raise DeprecationWarning("Nao usar essa funcao, usar monta_tensor_matriz_convectiva")
-        p = self.elementos.shape[1]  ##p=6
-        n_nos = len(self.nos)
-        n_elem = len(self.elementos)
-        D = tensor_convectivo  # Dqljk eh a componente da integral do termo convectivo no elemento l, com o q-esimo no como funcao teste, multiplicado pelo j-esimo e o k-esimo nos do mesmo elemento
-        G = self.pertencimento  # Gilq=1 se o no i eh o q-esimo no do elemento l
-        shape = (len(self.nos), len(self.nos))
-        ##Duqsl=Dqlrs*ulr (soma variando r de 1 a 6)
-        u = u_n_x[self.elementos]  ##Valores nodais de u em cada elemento (ne x 6)
-        Du = tf.reduce_sum(tf.transpose(D, perm=[0, 3, 1, 2]) * u, axis=-1)
-        ##GDu_jql = G_jls*Du_qsl (soma variando s de 1 a 6)
-        intermediario = []
-        for i in range(p):
-            intermediario.append(tf.sparse.reduce_sum(G * tf.transpose(Du[i]), axis=-1, output_is_sparse=True))
-        GDu = tf.sparse.reshape(tf.sparse.concat(0, intermediario), (n_nos, p, n_elem))  ##Empilhando as linhas da lista intermediaria
-        intermediario = None
-        ##shape_GDu= (n_nos,p, n_elem)
-        ##GGDu_ij = G_ilq*GDu_jql (soma variando l de 1 a n_elem e q de 1 a 6)
-        ##TODO resolver o fato de que da ruim (nao pode multiplicar 2 esparsos)
-        GGDu = tf.sparse.reduce_sum(G * tf.sparse.transpose(GDu, [0, 2, 1]), axis=(-1, -2))
-        GGDu[nos_dirichlet] *= 0
-        return GGDu
 
     def monta_tensor_matriz_convectiva(self, tensor_convectivo, contornos_dirichlet):
         '''Produz um tensor que vai, aplicado ao vetor de velocidade do apsso anterior, produzir a matriz que representa o termo convectivo ud/dx ou vd/dy'''
@@ -1053,10 +1029,11 @@ class FEA(object):
         elif formulacao == "B":
             pass
         vetor_dirich_u = np.concatenate((b_dirich_ux, b_dirich_uy))
-        if conveccao:
+        if formulacao in ("A", "B", "D","E"):
             D_x, D_y = self.monta_tensor_convectivo(ordem=2, debug=debug)  ##tensores relevantes para o termo convectivo derivado em x e y, respectivamente
             tensor_conv_Dx = self.monta_tensor_matriz_convectiva(D_x, ux_dirichlet)
             tensor_conv_Dy = self.monta_tensor_matriz_convectiva(D_y, ux_dirichlet)
+            pertencimento=tensor_pertencimento(self.elementos)
 
         A_p = mat_lap_o1 + A_dirich_p
         ##u
@@ -1087,11 +1064,11 @@ class FEA(object):
                     produtos_uyux = np.transpose(produtos_uyux, axes=(0, 2, 1))
                     produtos_uxux = produto_cartesiano_nodais(ux_elementos, ux_elementos, ordem=2)
                     produtos_uyuy = produto_cartesiano_nodais(uy_elementos, uy_elementos, ordem=2)
-                    ududx = calcula_termo_convectivo(produtos_uxux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_ux)
-                    vdudy = calcula_termo_convectivo(produtos_uxuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_ux)
+                    ududx = calcula_termo_convectivo(produtos_uxux, D_x, pertencimento, nos_dirichlet=nos_dirich_ux)
+                    vdudy = calcula_termo_convectivo(produtos_uxuy, D_y, pertencimento, nos_dirichlet=nos_dirich_ux)
                     termo_convectivo_x = ududx + vdudy
-                    udvdx = calcula_termo_convectivo(produtos_uyux, D_x, self.pertencimento, nos_dirichlet=nos_dirich_uy)
-                    vdvdy = calcula_termo_convectivo(produtos_uyuy, D_y, self.pertencimento, nos_dirichlet=nos_dirich_uy)
+                    udvdx = calcula_termo_convectivo(produtos_uyux, D_x, pertencimento, nos_dirichlet=nos_dirich_uy)
+                    vdvdy = calcula_termo_convectivo(produtos_uyuy, D_y, pertencimento, nos_dirichlet=nos_dirich_uy)
                     termo_convectivo_y = udvdx + vdvdy
                     vetor_convectivo = np.concatenate((termo_convectivo_x, termo_convectivo_y))
                 elif formulacao == "E":  ###Matrizes que aplicadas em um vetor w, calculam udw/dx+vdw/dy (o termo convectivo)
