@@ -1,3 +1,6 @@
+import matplotlib.pyplot as plt
+import numpy as np
+
 import AerofolioFino
 import Malha
 import ElementosFinitos
@@ -152,7 +155,6 @@ def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, form
         # with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "wb") as f :
         #     pickle.dump((Problema, resultados), f)
         salvar_resultados(nome_malha, tag_fis, resultados, os.path.join("Saida", "Poiseuille", f"Poiseuille h={tamanho} dt={dt} Re={Re} {formulacao}.zip"))
-        RepresentacaoEscoamento.plotar_perfis(Problema, resultados, T)
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u = resultados[T]["u"]
         p = resultados[T]["p"]
@@ -161,9 +163,7 @@ def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, form
         #     Problema, resultados = pickle.load(f)
         Problema, u, p, nome_malha = carregar_resultados(os.path.join("Saida", "Poiseuille", f"Poiseuille h={tamanho} dt={dt} Re={Re} {formulacao}.zip"))
 
-    t0 = time.process_time()
-    t1 = time.process_time()
-    print(f"Perfis plotados em {t1 - t0:.4f} s")
+
     t2 = time.process_time()
     resolucao = tamanho / 3
     x = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
@@ -180,6 +180,11 @@ def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, form
     correntes = RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=pontos_inicio, resolucao=resolucao, path_salvar=path_salvar + " correntes.png")
     t5 = time.process_time()
     print(f"Linhas de corrente calculadas em {t5 - t4:.4f} s")
+    solucao_analitica = lambda x : np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
+    r = np.linspace((0., 0., 0.), (0., 1., 0.), 101)
+    u_ref = solucao_analitica(r)
+    RepresentacaoEscoamento.plotar_perfis(Problema, u, lim_x=(0, 4), referencia=(r, u_ref))
+    plt.savefig(path_salvar + " perfis.png", dpi=300, bbox_inches="tight")
 
     # plotar_momento(Problema, resultados, 3)
     plt.show(block=False)
@@ -245,7 +250,7 @@ def teste_cavidade(tamanho=0.01, p0=0, dt=0.01, T=3, Re=1, executa=True, formula
     ##Plotando as linhas de corrente para um lado e para o outro
     fig, eixo = plt.subplots()
     correntes = RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=iniciais, resolucao=resolucao, eixo=eixo)
-    correntes_inversas = RepresentacaoEscoamento.linhas_de_corrente(Problema, -u, pontos_iniciais=iniciais, resolucao=tamanho / 10, eixo=eixo)
+    correntes_inversas = RepresentacaoEscoamento.linhas_de_corrente(Problema, -u, pontos_iniciais=iniciais, resolucao=resolucao, eixo=eixo)
     plt.savefig(os.path.join(nome_diretorio, "Correntes.png"), dpi=300, bbox_inches="tight")
 
 
@@ -500,6 +505,73 @@ def validacao_npontos_af(n_min=5, n_max=500, Re=1, dt=0.01, T=30, h=0.5, formula
         RepresentacaoEscoamento.plotar_dataframe_analise(dframe_erros, "n", path_salvar=nome_diretorio)
     return
 
+def teste_degrau(h=0.1, h2=0.05, dt=0.01, T=10, Re=100, L=30, executa=True, formulacao="F", compara=False):
+    '''Modela um escoamento sobre um degrau de costas, para validacao'''
+    nome_diretorio = os.path.join("Saida", "Degrau", f"Degrau h={h} h2={h2} dt={dt} Re={Re} T={T} L={L} {formulacao}")
+    if executa:
+        nome_malha, tag_fis= Malha.malha_degrau("Degrau",h, h2, S=1,L=L)
+        Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
+        ux_dirichlet=[
+            (Problema.nos_cont["entrada"], lambda x: 6*x[1]*(1-x[1])),
+            (Problema.nos_cont["parede"], lambda x: 0)
+        ]
+        uy_dirichlet=[
+            (Problema.nos_cont["entrada"], lambda x: 0),
+            (Problema.nos_cont["parede"], lambda x: 0)
+        ]
+        p_dirichlet=[
+            (Problema.nos_cont_o1["saida"], lambda x: 0)
+        ]
+        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, formulacao=formulacao)
+        nome_diretorio = cria_diretorio(nome_diretorio)
+        nome_arquivo = os.path.join(nome_diretorio, f"Degrau.zip")
+        salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo)
+        RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
+        u = resultados[T]["u"]
+        p = resultados[T]["p"]
+    else:
+        nome_arquivo = os.path.join(nome_diretorio, f"Degrau.zip")
+        Problema, u, p, nome_malha = carregar_resultados(nome_arquivo)
+    ##Pos-processamento
+    resolucao = h / 5
+    x = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
+    y = np.arange(Problema.y_min, Problema.y_max + resolucao, resolucao)
+    localizacao = Problema.localiza_grade(x, y)
+
+    (x1, y1), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=os.path.join(nome_diretorio, "U.png"))
+    (x1, y1), mapa_v = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade vertical", path_salvar=os.path.join(nome_diretorio, "V.png"))
+    (x1, y1), mapa_p = RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Pressão", path_salvar=os.path.join(nome_diretorio, "P.png"))
+
+    iniciais=np.concatenate([np.linspace((-1,0.1),(-1,0.9), 5), np.linspace((0.1,-0.9),(0.1,-0.1),5)])
+    RepresentacaoEscoamento.linhas_de_corrente(Problema, u, iniciais, resolucao=resolucao, path_salvar=os.path.join(nome_diretorio, "Linhas de corrente.png"))
+    if compara:
+        if os.path.exists(os.path.join("Entrada","Referencia","Degrau",f"Re={Re}")):
+            perfis_comparacao=[]
+            for arquivo in os.listdir(os.path.join("Entrada","Referencia","Degrau",f"Re={Re}")):
+                if arquivo[:2]=="x=" and arquivo[-4:]==".csv":
+                    x_ref=float(arquivo[2:-4])
+                    u_ref, y_ref = np.loadtxt(os.path.join("Entrada","Referencia","Degrau",f"Re={Re}",arquivo), delimiter=";", unpack=True, skiprows=1)
+                    perfis_comparacao.append((x_ref, u_ref, y_ref))
+            if len(perfis_comparacao)>0:
+                fig,eixos=plt.subplots(1,len(perfis_comparacao), figsize=(10,5))
+                y_interp=np.linspace(-1,1,201)
+                for i, (x_ref, u_ref, y_ref) in enumerate(perfis_comparacao):
+                    eixos[i].set_title(f"x={x_ref}")
+                    eixos[i].scatter(u_ref, y_ref, marker="*", label="Referência")
+                    u_interp=np.array([Problema.interpola(np.array((x_ref,y)), u, ordem=2) for y in y_interp])[:, 0]
+                    eixos[i].plot(u_interp, y_interp, label="Simulação")
+                eixos[-1].legend()
+                fig.savefig(os.path.join(nome_diretorio, "Comparação.png"))
+    return
+
+
+
+
+
+
+
+
+
 
 
 
@@ -517,6 +589,12 @@ if __name__ == "__main__":
     # teste_cavidade(tamanho=0.05, dt=0.01,T=20,Re=0.01,executa=False,formulacao="E")
     # plt.show(block=True)
     # teste_cavidade(tamanho=0.01, p0=0,  executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
+
+    teste_poiseuille(tamanho=0.05, executa=True, dt=0.01, T=10, Re=50, formulacao="F")
+    plt.show(block=False)
+
+    teste_degrau(h=0.1,h2=0.01, T=30, L=10, Re=50, compara=True)
+    plt.show(block=True)
     teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=True, formulacao="F")
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=False, formulacao="A")
     # plt.show(block=True)

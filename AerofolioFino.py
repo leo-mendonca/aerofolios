@@ -121,20 +121,22 @@ class AerofolioFino(Aerofolio) :
     def desenhar(self) :
         fig, eixo = plt.subplots()
         fig.set_size_inches(7.5, 5)
-        x = np.arange(0, 1.01, 0.01)
+        x = np.arange(0, 1.01, 0.001)
         x1 = self.x_sup(x)
         x2 = self.x_inf(x)
         y = self.y_camber(x)
         y1 = self.y_sup(x)
         y2 = self.y_inf(x)
         eixo.set_xlim(-0.05, 1.05)
-        eixo.set_ylim(-0.55, 0.55)
+        eixo.set_ylim(-0.2, 0.2)
         eixo.set_aspect("equal")
         eixo.plot(x1, y1, color="black")
         eixo.plot(x2, y2, color="black")
-        eixo.fill_between(x1, y1, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
-        eixo.fill_between(x2, y2, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
-        eixo.plot(x, y, color="gray", linestyle="dashed")
+        x_poli, y_poli=np.concatenate((x1, x2[::-1])), np.concatenate((y1, y2[::-1])) ##poligono fechado que repreesent o aerofolio
+        eixo.fill(x_poli, y_poli, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
+        # eixo.fill_between(x1, y1, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
+        # eixo.fill_between(x2, y2, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
+        eixo.plot(x, y, color="gray", linestyle="dashed", alpha=0.5)
 
 
 class AerofolioFinoNACA4(AerofolioFino) :
@@ -155,8 +157,7 @@ class AerofolioFinoNACA4(AerofolioFino) :
         return y
 
     def grad_y_camber(self, x) :
-        grad = self.const_m / self.const_p ** 2 * (2 * self.const_p - 2 * x) * (x < self.const_p) + self.const_m / (1 - self.const_p) ** 2 * (2 * self.const_p - 2 * x) * (
-                    x >= self.const_p)
+        grad = self.const_m / self.const_p ** 2 * (2 * self.const_p - 2 * x) * (x < self.const_p) + self.const_m / (1 - self.const_p) ** 2 * (2 * self.const_p - 2 * x) * (x >= self.const_p)
         return grad
 
     def theta_camber(self, x) :
@@ -166,7 +167,7 @@ class AerofolioFinoNACA4(AerofolioFino) :
         y_espessura = 5 * self.const_t * (0.2969 * np.sqrt(x) - 0.1260 * x - 0.3516 * x ** 2 + 0.2843 * x ** 3 - 0.1015 * x ** 4)
         return y_espessura
 
-    def y_sup_0(self, x) :  ##TODO conferir equacoes e fazer y(0)=y(1)=0 (erros numericos estao acontecendo)
+    def y_sup_0(self, x) :
         return self.y_camber(x) + self.espessura(x) * np.cos(self.theta_camber(x))
 
     def y_inf_0(self, x) :
@@ -253,6 +254,9 @@ NACA4412_10= AerofolioFinoNACA4([0.04, 0.4, 0.12], -10*np.pi/180, 1)
 
 if __name__ == "__main__" :
     plt.rcParams["axes.grid"] = True
+    af=AerofolioFinoNACA4([0.07,0.30,0.11], 0, 1)
+    af.desenhar()
+    plt.savefig(os.path.join("Saida","Aerofolio Fino NACA4","Figuras","NACA7311.png"), dpi=300, bbox_inches="tight")
 
 
     def distro_p(n) :

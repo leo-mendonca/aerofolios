@@ -43,6 +43,44 @@ def malha_retangular(nome_modelo, tamanho, formato, ordem=2) :
     gmsh.finalize()
     return nome_arquivo, tag_fis
 
+def malha_degrau(nome_modelo="Degrau", tamanho=0.2, tamanho_fino=None, S=1, L=20) :
+    '''Gera uma malha correspondendo ao problema do degrau invertido'''
+    contornos={"entrada":1,"topo_degrau":2,"parede_degrau":3,"inferior":4,"saida":5,"superior":6}
+    tag_fis = {}
+    ordem=2
+    if tamanho_fino is None: tamanho_fino=tamanho
+    ##Inicializando o gmsh
+    gmsh.initialize()
+    gmsh.model.add(nome_modelo)  # adiciona um modelo
+    gmsh.model.set_current(nome_modelo)  # define o modelo atual
+    geo.add_point(-1,0,0,tamanho, tag=1)  # ponto inferior da entrada
+    geo.add_point(0,0,0,tamanho_fino, tag=2)  # vertice do degrau
+    geo.add_point(0,-S,0,tamanho_fino, tag=3)  # base do degrau
+    geo.add_point(L,-S,0,tamanho, tag=4)  # ponto inferior da saida
+    geo.add_point(L,1,0,tamanho, tag=5)  # ponto superior da saida
+    geo.add_point(-1,1,0,tamanho, tag=6)  # ponto superior da entrada
+    geo.add_line(6,1,tag=contornos["entrada"])  # linha de entrada
+    geo.add_line(1,2,tag=contornos["topo_degrau"])  # linha do topo do degrau
+    geo.add_line(2,3,tag=contornos["parede_degrau"])  # linha da parede do degrau
+    geo.add_line(3,4,tag=contornos["inferior"])  # linha inferior
+    geo.add_line(4,5,tag=contornos["saida"])  # linha de saida
+    geo.add_line(5,6,tag=contornos["superior"])  # linha superior
+    geo.add_curve_loop([contornos["entrada"],contornos["topo_degrau"],contornos["parede_degrau"],contornos["inferior"],contornos["saida"],contornos["superior"]],tag=1)  # superficie externa
+    geo.add_plane_surface([1],tag=1)  # superficie do escoamento
+    tag_fis["entrada"]=geo.add_physical_group(1,[contornos["entrada"]])
+    tag_fis["parede"]=geo.add_physical_group(1,[contornos["topo_degrau"],contornos["parede_degrau"],contornos["inferior"],contornos["superior"]])
+    tag_fis["saida"]=geo.add_physical_group(1,[contornos["saida"]])
+    tag_fis["escoamento"] = geo.add_physical_group(2, [1])
+    ###Sincronizar as modificacoes geometricas e gerar a malha
+    geo.synchronize()  # necessario!
+    gmsh.option.set_number("Mesh.ElementOrder", ordem)  # Define a ordem dos elementos
+    gmsh.model.mesh.generate(2)  # gera a malha
+    nome_arquivo = os.path.join("Malha", f"{nome_modelo}.msh")
+    gmsh.write(nome_arquivo)  # salva o arquivo da malha
+    ##Encerrando o gmsh
+    gmsh.finalize()
+    return nome_arquivo, tag_fis
+
 
 def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao, ordem=2, tamanho=tamanho_padrao, folga=10) :
     '''Gera uma malha no gmsh correspondendo a regiao em torno do aerofolio'''

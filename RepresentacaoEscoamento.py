@@ -37,21 +37,24 @@ def plotar_momento(Problema, resultados, t, plotar_auxiliares=True):
     plt.colorbar()
 
 
-def plotar_perfil(Problema, resultados, t, x=4, eixo=None, ordem=2):
+def plotar_perfil(Problema, u, x=4, eixo=None, ordem=2):
     r = np.linspace([x, 0, 0], [x, 1, 0], 1001)
-    u = np.array([Problema.interpola(p, resultados[t]["u"], ordem=ordem) for p in r])
-    ux = u[:, 0]
-    uy = u[:, 1]
+    u_interp = np.array([Problema.interpola(p, u, ordem=ordem) for p in r])
+    ux = u_interp[:, 0]
+    uy = u_interp[:, 1]
     if eixo is None:
         plt.figure()
-        plt.suptitle(f"Perfil de velocidade horizontal - ux   t= {t},  x={x}")
+        plt.suptitle(f"Perfil de velocidade horizontal - x={x}")
     plt.plot(ux, r[:, 1], label=f"ux({x},y)")
 
 
-def plotar_perfis(Problema, resultados, t, lim_x=(0,5)):
+def plotar_perfis(Problema, u, lim_x=(0,5), referencia=None):
     fig, eixo = plt.subplots()
-    for x in np.arange(lim_x[0], lim_x[1]+.00000001, 0.5):
-        plotar_perfil(Problema, resultados, t, x, eixo)
+    for x in np.arange(lim_x[0], lim_x[1]+0.000001, 1):
+        plotar_perfil(Problema, u, x, eixo)
+    if not referencia is None:
+        r, u_ref = referencia
+        eixo.scatter(u_ref[:,0],r[:,1], marker="*", color="black", label="Referencia")
     eixo.legend()
     return
 

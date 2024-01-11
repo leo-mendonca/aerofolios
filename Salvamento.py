@@ -2,6 +2,7 @@ import os
 import zipfile
 
 import numpy as np
+import pandas as pd
 
 import ElementosFinitos
 
@@ -59,3 +60,11 @@ def cria_diretorio(nome_diretorio):
             id_arquivo += 1
             nome_tentativo = f"{nome_diretorio} {id_arquivo}"
     return nome_diretorio
+
+def adimensionaliza_referencia(nome_arquivo, U, D, offset_y):
+    '''Le um arquivo .csv contendo um perfil de velocidade×altura e o adimensionaliza'''
+    dframe=pd.read_csv(nome_arquivo, sep=";", skipinitialspace=True)
+    dframe["y"]=(dframe["y"]-offset_y)/D
+    dframe["U"]*=1/U
+    dframe.to_csv(nome_arquivo, sep=";", index=False)
+

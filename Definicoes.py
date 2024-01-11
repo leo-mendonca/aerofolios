@@ -11,6 +11,8 @@ import matplotlib
 import gmsh
 import warnings
 
+import os
+
 plt.rcParams["figure.dpi"]=300
 plt.rcParams["figure.figsize"]=(6,4)
 plt.rcParams["font.size"]=12
