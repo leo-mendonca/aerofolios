@@ -1,11 +1,5 @@
-import matplotlib.pyplot as plt
-import numpy
-import numpy as np
-from matplotlib import pyplot
-import os
-
 import ElementosFinitos
-from Definicoes import *
+from Definicoes import plt,np,os
 
 
 def plotar_momento(Problema, resultados, t, plotar_auxiliares=True):

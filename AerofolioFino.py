@@ -1,7 +1,4 @@
-import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from Definicoes import *
+from Definicoes import np,plt,pd
 
 
 class Aerofolio(object) :

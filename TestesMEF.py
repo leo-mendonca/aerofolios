@@ -1,5 +1,7 @@
 import matplotlib.pyplot as plt
+import numpy
 import numpy as np
+from scipy import sparse
 
 import AerofolioFino
 import Malha
@@ -9,6 +11,7 @@ import time
 import os
 import pickle
 from Definicoes import *
+from ElementosFinitos import FEA
 from Salvamento import carregar_resultados, cria_diretorio, salvar_resultados
 
 
@@ -47,6 +50,99 @@ def numeracao_nos():
         plt.text(x[i], y[i], i)
     plt.show(block=False)
     return
+
+def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False, gauss=False):
+    '''Testa a resolucao do problema de laplace escalar'''
+    print(f"Testando o caso numero {n_teste} com elementos de ordem {ordem}")
+    t0 = time.process_time()
+    if nome_malha is None:
+        nome_malha, tag_fis = Malha.malha_quadrada("teste_laplace", 0.1, 2)
+    elif tag_fis is None:
+        raise ValueError("Se nome_malha for fornecido, tag_fis deve ser fornecido tambem")
+    t1 = time.process_time()
+    print(f"Malha gerada em {t1 - t0} segundos")
+    fea = FEA(nome_malha, tag_fis)
+    t2 = time.process_time()
+    print(f"Objeto FEA inicializado em {t2 - t1} segundos")
+    if n_teste == 1:
+        funcao_exata = lambda x: x.T[0] + x.T[1] + 7
+        lado_direito = lambda x: 0 * x.T[0]
+    elif n_teste == 2:
+        funcao_exata = lambda x: x.T[0] ** 2 - x.T[1] ** 2
+        lado_direito = lambda x: 0 * x.T[0]
+    elif n_teste == 3:
+        ##p=x²+y² --> nabla²p=4
+        funcao_exata = lambda x: (x.T[0] ** 2 + x.T[1] ** 2) / 4
+        lado_direito = lambda x: x.T[0] * 0 + 1
+    elif n_teste == 4:
+        funcao_exata = lambda x: (1 + x.T[0] ** 2 + 2 * x.T[1] ** 2)
+        lado_direito = lambda x: x.T[0] * 0 + 6
+    if ordem == 1:
+        nos = fea.nos_o1
+    else:
+        nos = fea.nos
+    x_nos = fea.x_nos[nos]
+    contornos_dirichlet = [(np.intersect1d(fea.nos_cont[chave], nos), funcao_exata) for chave in fea.nos_cont]  ##pega os pontos do contorno que estao na malha linear (vertices)
+    pontos_dirichlet = np.unique(np.concatenate([contornos_dirichlet[i][0] for i in range(len(contornos_dirichlet))]))
+    t3 = time.process_time()
+    if gauss:
+        procedimento1 = fea.procedimento_laplaciano_num
+        procedimento2 = fea.procedimento_integracao_num
+    else:
+        procedimento1 = fea.procedimento_laplaciano
+        procedimento2 = fea.procedimento_integracao_simples
+    A_L = fea.monta_matriz(procedimento1, contornos_dirichlet, ordem=ordem)
+    A_d, b_d = fea.monta_matriz_dirichlet(contornos_dirichlet, ordem=ordem)
+    # if gauss:procedimento=fea.procedimento_integracao_num
+    # else: procedimento=fea.procedimento_integracao_simples
+    A_int = fea.monta_matriz(procedimento2, contornos_dirichlet, ordem=ordem)
+    b_int = A_int @ (lado_direito(x_nos))
+    A = (A_L + A_d).tocsc()
+    A_array = A.toarray()
+    b = b_d + b_int
+    t4 = time.process_time()
+    print(f"Matriz montada em {t4 - t3} segundos")
+    print(f"Resolvendo sistema linear {A.shape[0]}x{A.shape[1]}")
+    # p=np.linalg.solve(A,b)
+    p_exato = funcao_exata(x_nos)
+    ###Identificando erros construtivos na montagem das matrizes
+    n_erros_interior = np.count_nonzero(~(np.isclose(A_L @ p_exato, b_int)))
+    n_erros_dirichlet = np.count_nonzero(~(np.isclose(A_d @ p_exato, b_d)))
+    n_erros_total = np.count_nonzero(~(np.isclose(A @ p_exato, b)))
+    erros = ~np.isclose(A @ p_exato, b)
+    print(f"Linhas erradas na matriz laplaciana: {n_erros_interior}\nLinhas erradas na matriz Dirichlet: {n_erros_dirichlet}\nLinhas erradas na matriz final do sistema: {n_erros_total}")
+
+    p = ssp.linalg.spsolve(A, b)
+    t5 = time.process_time()
+    print(f"Sistema linear resolvido em {t5 - t4} segundos")
+    erros_final = np.nonzero(~np.isclose(A @ p, b))  ##Vai ser sempre zero, a menos que o solver esteja errado
+    if ordem == 1:
+        x_nos = fea.x_nos[fea.nos_o1]
+    else:
+        x_nos = fea.x_nos
+
+    erro = p - p_exato
+    print("Erro maximo: ", np.max(erro))
+    print("Erro medio: ", np.mean(erro))
+    print("Erro RMS: ", np.sqrt(np.mean(erro ** 2)))
+    if plota:
+        fig1, eixo1 = plt.subplots()
+        plt.triplot(fea.x_nos[:, 0], fea.x_nos[:, 1], fea.elementos_o1, alpha=0.3)
+        plt.scatter(x_nos.T[0], x_nos.T[1], c=p, alpha=0.5)
+        plt.colorbar()
+        plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_p.png"), bbox_inches="tight")
+        fig2, eixo2 = plt.subplots()
+        erro_alto = np.abs(erro) > 1E-3
+        plt.triplot(fea.x_nos[:, 0], fea.x_nos[:, 1], fea.elementos_o1, alpha=0.3)
+        plt.scatter(x_nos.T[0], x_nos.T[1], c=erro, alpha=0.5)
+        plt.colorbar()
+        plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_erro.png"), bbox_inches="tight")
+        fig3, eixo3 = plt.subplots()
+        erro_baixo = np.abs(erro) <= 1E-3
+        eixo3.triplot(fea.x_nos[:, 0], fea.x_nos[:, 1], fea.elementos_o1, alpha=0.3)
+        # eixo3.scatter(x_nos[erro_baixo].T[0], x_nos[erro_baixo].T[1], alpha=0.5)
+        plt.savefig(os.path.join("Saida", f"teste{n_teste}_ordem{ordem}_malha.png"), bbox_inches="tight")
+        plt.show(block=False)
 
 
 def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao="F", T=3, dt=0.01, Re=1.):
@@ -652,6 +748,8 @@ if __name__ == "__main__":
     # teste_cavidade(tamanho=0.05, dt=0.01,T=20,Re=0.01,executa=False,formulacao="E")
     # plt.show(block=True)
     # teste_cavidade(tamanho=0.01, p0=0,  executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
+    teste_cavidade(tamanho=0.2, dt=0.01, T=5, Re=10, executa=True, formulacao="F")
+
     for Re in (0.1,1,10,100,500,1000):
         validacao_tempo_convergencia(Re=Re, n=100, dt=0.05, h=1.0, folga=6, T_max=100, aerofolio=AerofolioFino.NACA4412_10, formulacao="F")
     plt.show(block=True)
@@ -660,7 +758,6 @@ if __name__ == "__main__":
 
     teste_degrau(h=0.1,h2=0.01, T=30, L=10, Re=50, compara=True)
     plt.show(block=True)
-    teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=True, formulacao="F")
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=False, formulacao="A")
     # plt.show(block=True)
     # teste_poiseuille(0.1, 0, 1, 0.01, 2, True, "E")
@@ -702,3 +799,6 @@ if __name__ == "__main__":
     # # teste_forca(n=50, tamanho=0.3, debug=False, executa=False)
     # plt.show(block=False)
     # plt.show()
+
+
+
