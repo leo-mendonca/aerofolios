@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy
 import numpy as np
+import pandas as pd
 from scipy import sparse
 
 import AerofolioFino
@@ -15,27 +16,27 @@ from ElementosFinitos import FEA
 from Salvamento import carregar_resultados, cria_diretorio, salvar_resultados
 
 
-def teste_cilindro(n=50):
-    cilindro = AerofolioFino.Cilindro(.5, 0, 1)
-    nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n)
-    Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
-    ux_dirichlet = [
-        (Problema.nos_cont["esquerda"], lambda x: 1.),
-        (Problema.nos_cont["superior"], lambda x: 0.),
-        (Problema.nos_cont["inferior"], lambda x: 0.),
-        (Problema.nos_cont["af"], lambda x: 0.),
-    ]
-    uy_dirichlet = [
-        (Problema.nos_cont["esquerda"], lambda x: 0.),
-        (Problema.nos_cont["superior"], lambda x: 0.),
-        (Problema.nos_cont["inferior"], lambda x: 0.),
-        (Problema.nos_cont["af"], lambda x: 0.),
-    ]
-    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.), ]
-    resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True)
-    RepresentacaoEscoamento.plotar_momento(Problema, resultados, 10)
-    # RepresentacaoEscoamento.plotar_perfis(Problema, resultados, 10, lim_x=(-2,0))
-    return
+# def teste_cilindro(n=50):
+#     cilindro = AerofolioFino.Cilindro(.5, 0, 1)
+#     nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n)
+#     Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
+#     ux_dirichlet = [
+#         (Problema.nos_cont["esquerda"], lambda x: 1.),
+#         (Problema.nos_cont["superior"], lambda x: 0.),
+#         (Problema.nos_cont["inferior"], lambda x: 0.),
+#         (Problema.nos_cont["af"], lambda x: 0.),
+#     ]
+#     uy_dirichlet = [
+#         (Problema.nos_cont["esquerda"], lambda x: 0.),
+#         (Problema.nos_cont["superior"], lambda x: 0.),
+#         (Problema.nos_cont["inferior"], lambda x: 0.),
+#         (Problema.nos_cont["af"], lambda x: 0.),
+#     ]
+#     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.), ]
+#     resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=10, dt=0.1, Re=1, conveccao=True)
+#     RepresentacaoEscoamento.plotar_momento(Problema, resultados, 10)
+#     # RepresentacaoEscoamento.plotar_perfis(Problema, resultados, 10, lim_x=(-2,0))
+#     return
 
 
 def numeracao_nos():
@@ -145,11 +146,11 @@ def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False
         plt.show(block=False)
 
 
-def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao="F", T=3, dt=0.01, Re=1.):
-    nome_diretorio = f"Saida/Cilindro/Cilindro n={n} h={tamanho} dt={dt} Re={Re} T={T} {formulacao}"
+def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao="F", T=3, dt=0.01, Re=1., folga=6):
+    nome_diretorio = f"Saida/Cilindro/Cilindro n={n} h={tamanho} dt={dt} Re={Re} T={T} folga={folga} {formulacao}"
     if executa:
         cilindro = AerofolioFino.Cilindro(.5, 0, 1)
-        nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n, tamanho=tamanho)
+        nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n, tamanho=tamanho, folga=folga)
         Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
         ux_dirichlet = [
             (Problema.nos_cont["esquerda"], lambda x: 1.),
@@ -167,7 +168,7 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
 
         resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., p0=p0, formulacao=formulacao)
         nome_diretorio = cria_diretorio(nome_diretorio)
-        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
+        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} T={T} folga={folga} {formulacao}.zip")
         salvar_resultados(nome_malha, tag_fis, resultados, nome_arquivo)
         RepresentacaoEscoamento.plotar_momento(Problema, resultados, T)
         u = resultados[T]["u"]
@@ -179,53 +180,56 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
         nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
         Problema, u, p, nome_malha = carregar_resultados(nome_arquivo)
 
-    forca, x, tensao = Problema.calcula_forcas(p, u, debug=debug, viscosidade=True, Re=Re)
-    forca_p, x, tensao_p = Problema.calcula_forcas(p, u, debug=debug, viscosidade=False, Re=Re)
-    F = np.sum(forca, axis=0)
-    F_p = np.sum(forca_p, axis=0)
-    rho = 1.
-    U0 = 1.
-    D = 1.
-    c_d = F[0] / (0.5 * rho * U0 ** 2 * D)
-    c_l = F[1] / (0.5 * rho * U0 ** 2 * D)
-    x_rel = x - np.array([0.5, 0])
-    M = np.sum(np.cross(x_rel, forca), axis=0)
-    c_M = M / (0.5 * rho * U0 ** 2 * D ** 2)
-    pressao_a = Problema.interpola(np.array([0., 0.]), p, ordem=1)
-    pressao_b = Problema.interpola(np.array([1., 0.]), p, ordem=1)
-    c_p_a = pressao_a / (0.5 * rho * U0 ** 2)
-    c_p_b = pressao_b / (0.5 * rho * U0 ** 2)
-    c_d_p = F_p[0] / (0.5)
-    c_l_p = F_p[1] / (0.5)
+    # forca, x, tensao = Problema.calcula_forcas(p, u, debug=debug, viscosidade=True, Re=Re)
+    # forca_p, x, tensao_p = Problema.calcula_forcas(p, u, debug=debug, viscosidade=False, Re=Re)
+    # F = np.sum(forca, axis=0)
+    # F_p = np.sum(forca_p, axis=0)
+    # rho = 1.
+    # U0 = 1.
+    # D = 1.
+    # c_d = F[0] / (0.5 * rho * U0 ** 2 * D)
+    # c_l = F[1] / (0.5 * rho * U0 ** 2 * D)
+    # x_rel = x - np.array([0.5, 0])
+    # M = np.sum(np.cross(x_rel, forca), axis=0)
+    # c_M = M / (0.5 * rho * U0 ** 2 * D ** 2)
+    # pressao_a = Problema.interpola(np.array([0., 0.]), p, ordem=1)
+    # pressao_b = Problema.interpola(np.array([1., 0.]), p, ordem=1)
+    # c_p_a = pressao_a / (0.5 * rho * U0 ** 2)
+    # c_p_b = pressao_b / (0.5 * rho * U0 ** 2)
+    # c_d_p = F_p[0] / (0.5)
+    # c_l_p = F_p[1] / (0.5)
+    # vetor_F = forca / 200
+    # vetor_tensao = tensao / 200
+    # for i in range(len(x)):
+    #     plt.plot([x[i, 0], x[i, 0] + vetor_tensao[i, 0]], [x[i, 1], x[i, 1] + vetor_tensao[i, 1]], 'k-')
+    c_d,c_l,c_M, (c_p_a, c_p_b, c_d_p, c_d_s, c_l_p, c_l_s) = ElementosFinitos.coeficientes_aerodinamicos(Problema,u,p,Re,x_centro=cilindro.centro_aerodinamico,detalhado=True)
     print(f"Coeficiente de arrasto devido a pressao: {c_d_p}")
-    print(f"Coeficiente de arrasto devido ao atrito: {c_d - c_d_p}")
+    print(f"Coeficiente de arrasto devido ao atrito: {c_d_s}")
     print(f"Coeficiente de arrasto total: {c_d}")
     print(f"Coeficiente de sustentacao devido a pressao: {c_l_p}")
     print(f"Coeficiente de sustentacao total: {c_l}")
     print(f"Coeficiente de Momento: {c_M}")
     print(f"Coeficiente de pressao de estagnacao: {c_p_a}")
     print(f"Coeficiente de pressao de saida: {c_p_b}")
-    coeficientes = c_d_p, c_d - c_d_p, c_d, c_l, c_M, c_p_a, c_p_b
-    vetor_F = forca / 200
-    vetor_tensao = tensao / 200
+    # coeficientes = c_d_p, c_d - c_d_p, c_d, c_l, c_M, c_p_a, c_p_b
+    coeficientes= c_d,c_l,c_M, c_d_p,c_d_s,c_p_a,c_p_b
     plt.figure()
     theta = np.arange(0, 2 * np.pi, 0.01)
     plt.plot(.5 + 0.5 * np.cos(theta), 0.5 * np.sin(theta), 'b-', alpha=0.3, linewidth=2)
-    for i in range(len(x)):
-        plt.plot([x[i, 0], x[i, 0] + vetor_tensao[i, 0]], [x[i, 1], x[i, 1] + vetor_tensao[i, 1]], 'k-')
+
     (x, y), mapa_p = RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=0.05, titulo=u"Pressão")
     ##Salvando os resultados
     resolucao = 0.05
-    x = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
-    y = np.arange(Problema.y_min, Problema.y_max + resolucao, resolucao)
+    xg = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
+    yg = np.arange(Problema.y_min, Problema.y_max + resolucao, resolucao)
     localizacao = Problema.localiza_grade(x, y)
-    (x, y), mapa_p = RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Pressão", path_salvar=os.path.join(nome_diretorio, "P.png"))
-    (x, y), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=os.path.join(nome_diretorio, "U.png"))
-    (x, y), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade vertical", path_salvar=os.path.join(nome_diretorio, "V.png"))
+    (x, y), mapa_p = RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=xg, y_grade=yg, local_grade=localizacao, titulo=u"Pressão", path_salvar=os.path.join(nome_diretorio, "P.png"))
+    (x, y), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=xg, y_grade=yg, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=os.path.join(nome_diretorio, "U.png"))
+    (x, y), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=xg, y_grade=yg, local_grade=localizacao, titulo=u"Velocidade vertical", path_salvar=os.path.join(nome_diretorio, "V.png"))
     iniciais = np.linspace([Problema.x_min, Problema.y_min + 0.1], [Problema.x_min, Problema.y_max - 0.1], 20)
     linhas = RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=iniciais, resolucao=tamanho / 10, path_salvar=os.path.join(nome_diretorio, "Correntes.png"))
     plt.show(block=False)
-    return forca, x, coeficientes
+    return coeficientes
 
 
 def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, formulacao="F"):
@@ -738,6 +742,9 @@ def validacao_tempo_convergencia(Re=1,n=100, dt=0.05, h=1.0, folga=6,T_max=100, 
 
 
 if __name__ == "__main__":
+    ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
+
+
     # af=AerofolioFino.NACA4412_10
     # nome_malha,tag_fis=Malha.malha_aerofolio(af, n_pontos_contorno=50, tamanho=0.5, folga=3)
     # Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
@@ -748,16 +755,16 @@ if __name__ == "__main__":
     # teste_cavidade(tamanho=0.05, dt=0.01,T=20,Re=0.01,executa=False,formulacao="E")
     # plt.show(block=True)
     # teste_cavidade(tamanho=0.01, p0=0,  executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
-    teste_cavidade(tamanho=0.2, dt=0.01, T=5, Re=10, executa=True, formulacao="F")
-
-    for Re in (0.1,1,10,100,500,1000):
-        validacao_tempo_convergencia(Re=Re, n=100, dt=0.05, h=1.0, folga=6, T_max=100, aerofolio=AerofolioFino.NACA4412_10, formulacao="F")
-    plt.show(block=True)
-    teste_poiseuille(tamanho=0.05, executa=True, dt=0.01, T=10, Re=50, formulacao="F")
-    plt.show(block=False)
-
-    teste_degrau(h=0.1,h2=0.01, T=30, L=10, Re=50, compara=True)
-    plt.show(block=True)
+    # teste_cavidade(tamanho=0.2, dt=0.01, T=5, Re=10, executa=True, formulacao="F")
+    #
+    # for Re in (0.1,1,10,100,500,1000):
+    #     validacao_tempo_convergencia(Re=Re, n=100, dt=0.05, h=1.0, folga=6, T_max=100, aerofolio=AerofolioFino.NACA4412_10, formulacao="F")
+    # plt.show(block=True)
+    # teste_poiseuille(tamanho=0.05, executa=True, dt=0.01, T=10, Re=50, formulacao="F")
+    # plt.show(block=False)
+    #
+    # teste_degrau(h=0.1,h2=0.01, T=30, L=10, Re=50, compara=True)
+    # plt.show(block=True)
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=False, formulacao="A")
     # plt.show(block=True)
     # teste_poiseuille(0.1, 0, 1, 0.01, 2, True, "E")
@@ -770,6 +777,13 @@ if __name__ == "__main__":
     #     teste_forca(n=500, tamanho=0.5, debug=False, executa=False, formulacao="F", T=20, dt=0.01, Re=Re)
     #     plt.close("all")
 
+    coefs=np.zeros(shape=(8,7),dtype=np.float64)
+
+    for i, Re in enumerate((0.1,0.4,1.0,1.6,3.0,3.9,5.0,6.0)):
+        coefs[i]=teste_forca(n=100, tamanho=1., debug=False, executa=True, formulacao="F", T=50, dt=0.05, Re=Re, folga=6)
+    df=pd.DataFrame(index=(0.1,0.4,1.0,1.6,3.0,3.9,5.0,6.0),columns=("c_d","c_l","c_M","c_d_p","c_d_s","c_p_a","c_p_b"), data=coefs.T)
+    df.to_csv(os.path.join("Saida","Aerofolio","Cilindro","Resultados.csv"))
+    plt.show(block=True)
     valores_folga=np.linspace(1,15,8)
     valores_n=np.linspace(50,600,12).astype(int)
     valores_dt=np.logspace(-3,-1,8)

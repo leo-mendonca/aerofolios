@@ -12,12 +12,33 @@ def exporta_valores(u, t, malha, path):
 
 def calculo_aerofolio(aerofolio):
     '''
-    Calcula as propriedades aerodinamicas de um aerofolio
+    Calcula as propriedades aerodinamicas de um aerofolio eretorna arrasto, sustentacao e momento
     :param aerofolio: objeto da classe AerofolioFino
     '''
-    ##TODO implementar
+    nome_arquivo, tag_fis = Malha.malha_aerofolio(aerofolio, aerofolio.nome,folga=6)
+    Problema=FEA(nome_arquivo, tag_fis=tag_fis, aerofolio=aerofolio)
+    viscosidade=1.
+    D=1.
+    rho=1.
+    U0=aerofolio.U0
+    Re=rho*U0*D/viscosidade
 
-    nome_arquivo = Malha.malha_aerofolio(aerofolio, aerofolio.nome)
+    ux_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x: 1.),
+        (Problema.nos_cont["superior"], lambda x: 1.),
+        (Problema.nos_cont["inferior"], lambda x: 1.),
+        (Problema.nos_cont["af"], lambda x: 0.),
+    ]
+    uy_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x: 0.),
+        (Problema.nos_cont["superior"], lambda x: 0.),
+        (Problema.nos_cont["inferior"], lambda x: 0.),
+        (Problema.nos_cont["af"], lambda x: 0.),
+    ]
+    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.), ]
+    u,p=Problema.escoamento_IPCS_NS(T=50,dt=0.05, ux_dirichlet=ux_dirichlet,uy_dirichlet=uy_dirichlet,p_dirichlet=p_dirichlet,Re=Re, formulacao="F")
+    c_d, c_l, c_M = coeficientes_aerodinamicos(Problema, u, p, Re, x_centro=aerofolio.x_centro)
+    return c_d, c_l, c_M
 
 
 def coefs_aux_grad_o2(a, b, c, d, e, f, x, y):
@@ -864,7 +885,7 @@ class FEA(object):
             coefs = self.coefs_o2[elemento, pos_i]
             return np.stack((coefs[1] + 2 * coefs[3] * x + coefs[5] * y, coefs[2] + 2 * coefs[4] * y + coefs[5] * x)).T
 
-    def escoamento_IPCS_NS(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, u0=0, v0=0, p0=0, salvar_cada=10, formulacao="A", debug=False, verboso=False):
+    def escoamento_IPCS_NS(self, T=10., dt=0.1, ux_dirichlet=[], uy_dirichlet=[], p_dirichlet=[], Re=1, solucao_analitica=None, regiao_analitica=None, u0=0, v0=0, p0=0, salvar_cada=10, formulacao="A", debug=False, verbosidade=1):
         '''Resolve um escoamento pelo metodo de desacoplamento de velocidade e pressao descrito em (Goda, 1978)
         Num primeiro momento, considera-se que as condicoes de contorno sao todas Dirichlet ou von Neumann homogeneo, entao as integrais no contorno sao desconsideradas
         Supoe-se que os pontos com condicao de dirchlet para ux sao os mesmos de uy, mas o valor da condicao de dirichlet em si pode ser diferente
@@ -873,6 +894,7 @@ class FEA(object):
         :param solucao_analitica: func. Solucao analitica do caso estacionario, se houver. Deve receber como argumento um array de pontos (x,y,z) e retornar um array de valores de u
         :param formulacao: str. Formulacao a ser usada para o calculo de u e p. Pode ser "A", "B" ou "C".
             "A": calculo de u* considerando a pressao do passo anterior. "B": calculo de u* sem considerar a pressao. "C": igual ao A, mas nao inclui o termo convectivo (equacao de STokes); "D": igual ao A, mas considera o termo difusivo so do passo de tempo anterior
+        :param verbosidade: int. Nivel de detalhamento dos prints. 0: quase nenhum print. 1: printa o tempo de execucao de cada passo. 2: printa o tempo de execucao e algumas medidas do escoamento
         '''
         if formulacao in ("A", "B", "D", "E", "F"):
             conveccao = True
@@ -953,7 +975,8 @@ class FEA(object):
         tempos_salvos = []
         tempos = np.arange(0, T + dt, dt)
         for t in tempos:
-            print(f"Resolvendo para t={t}")
+            if verbosidade>=1:
+                print(f"Resolvendo para t={t}")
             tl1 = time.process_time()
             ##Calculando u*
             # A matriz de solucao tem formato (2px2p), pois diz respeito apenas a velocidade
@@ -1028,9 +1051,10 @@ class FEA(object):
             u = ssp.linalg.spsolve(A_u, b_u)
             u = u.reshape((2, len(self.nos))).T
             tl2 = time.process_time()
-            print(f"Tempo de resolucao: {tl2 - tl1:.2f} s")
-            print(f"Pressao maxima: {np.max(np.abs(p))}")
-            if verboso:
+            if verbosidade>=1:
+                print(f"Tempo de resolucao: {tl2 - tl1:.2f} s")
+            if verbosidade>=2:
+                print(f"Pressao maxima: {np.max(np.abs(p))}")
                 print(f"Velocidade media: {np.average(u, axis=0)}")
                 print(f"Velocidade maxima: {np.max(np.abs(u), axis=0)}")
                 print(f"Pressao media: {np.average(p)}")
