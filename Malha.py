@@ -1,5 +1,5 @@
-import os
 from Definicoes import gmsh, np, plt
+from Definicoes import os
 
 geo = gmsh.model.geo  # definindo um alias para o modulo de geometria do gmsh
 n_pontos_contorno_padrao = 100

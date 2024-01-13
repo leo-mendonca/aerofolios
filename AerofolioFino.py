@@ -1,4 +1,5 @@
-from Definicoes import np,plt,pd
+from Definicoes import np,plt,pd, mcolors
+from Definicoes import os
 
 
 class Aerofolio(object) :
@@ -286,7 +287,7 @@ if __name__ == "__main__" :
     # NACA0050=AerofolioFinoNACA4([0.06,0.01,0.5], 0, 1)
     # plt.show(block=False)
 
-    banco = gerar_banco_dados(distribuicoes, n_amostras=2 ** 20, path_salvar="Saida/Aerofolio Fino NACA4/banco_resultados.csv")
+    banco = gerar_banco_dados(distribuicoes, n_amostras=2 ** 15, path_salvar="Saida/Aerofolio Fino NACA4/banco_resultados.csv")
     print(banco)
 
     # # coefs=np.array([1/4,1/8,-1/16,1/32])
