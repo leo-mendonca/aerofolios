@@ -59,7 +59,7 @@ def cria_diretorio(nome_diretorio):
             print("Esse caso ja foi executado. Tentando outro nome de arquivo...")
             id_arquivo += 1
             nome_tentativo = f"{nome_diretorio} {id_arquivo}"
-    return nome_diretorio
+    return nome_tentativo
 
 def adimensionaliza_referencia(nome_arquivo, U, D, offset_y):
     '''Le um arquivo .csv contendo um perfil de velocidade×altura e o adimensionaliza'''

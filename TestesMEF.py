@@ -564,6 +564,69 @@ def teste_degrau(h=0.1, h2=0.05, dt=0.01, T=10, Re=100, L=30, executa=True, form
                 fig.savefig(os.path.join(nome_diretorio, "Comparação.png"))
     return
 
+def validacao_tempo_convergencia(Re=1,n=100, dt=0.05, h=1.0, folga=6,T_max=100, aerofolio=AerofolioFino.NACA4412_10,formulacao="F"):
+    '''Calcula a solucao no tempo e avalia quanto tempo leva para atingir a convergencia do caso estacionario'''
+    nome_diretorio = cria_diretorio(os.path.join("Saida", "Aerofolio", f"Validacao Tempo {aerofolio.nome} n={n} h={h} Re={Re} dt={dt} T={T_max} {formulacao}"))
+    nome_malha, tag_fis = Malha.malha_aerofolio(aerofolio, n_pontos_contorno=n, tamanho=h, folga=folga)
+    Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
+    ux_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x: 1.),
+        (Problema.nos_cont["superior"], lambda x: 1.),
+        (Problema.nos_cont["inferior"], lambda x: 1.),
+        (Problema.nos_cont["af"], lambda x: 0.),
+    ]
+    uy_dirichlet = [
+        (Problema.nos_cont["esquerda"], lambda x: 0.),
+        (Problema.nos_cont["superior"], lambda x: 0.),
+        (Problema.nos_cont["inferior"], lambda x: 0.),
+        (Problema.nos_cont["af"], lambda x: 0.),
+    ]
+    p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0), ]
+    resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T_max, dt=dt, Re=Re, formulacao=formulacao, salvar_cada=10)
+    tempos=np.arange(0,T_max+10*dt,10*dt)
+    u_final=resultados[T_max]["u"]
+    p_final=resultados[T_max]["p"]
+    vetor_u=np.zeros(shape=np.concatenate([tempos.shape, u_final.shape]))
+    vetor_p=np.zeros(shape=np.concatenate([tempos.shape, p_final.shape]))
+    vetor_coefs=np.zeros(shape=(len(tempos),3))
+    vetor_t_calc=np.zeros(shape=len(tempos))
+    tempo_convergencia=0.
+    for i, t in enumerate(tempos):
+        try:
+            u=resultados[t]["u"]
+            p=resultados[t]["p"]
+            t_calc=resultados[t]["t_calc"]
+        except KeyError: ##se a solucao ja tiver convergido, olhamos para o tempo anterior, que ja vai corresponder a solucao estacionaria
+            u=vetor_u[i-1]
+            p=vetor_p[i-1]
+            t_calc=vetor_t_calc[i-1]
+            if tempo_convergencia==0: tempo_convergencia=t
+        c_d,c_l,c_M=ElementosFinitos.coeficientes_aerodinamicos(Problema, u, p, Re=Re, x_centro=aerofolio.centro_aerodinamico)
+        vetor_u[i]=u
+        vetor_p[i]=p
+        vetor_coefs[i]=(c_d,c_l,c_M)
+        vetor_t_calc[i]=t_calc
+    erro_u=vetor_u-u_final
+    erro_u, erro_v=erro_u[:,:,0], erro_u[:,:,1]
+    erro_p=vetor_p-p_final
+    eqm_u=np.sqrt(np.mean(erro_u**2,axis=1))
+    eqm_p=np.sqrt(np.mean(erro_p**2,axis=1))
+    eqm_v=np.sqrt(np.mean(erro_v**2,axis=1))
+    e_max_u=np.max(np.abs(erro_u),axis=1)
+    e_max_p=np.max(np.abs(erro_p),axis=1)
+    e_max_v=np.max(np.abs(erro_v),axis=1)
+    vies_u=np.mean(erro_u,axis=1)
+    vies_p=np.mean(erro_p,axis=1)
+    vies_v=np.mean(erro_v,axis=1)
+    cols = ["c_d", "c_l", "c_M", "eqm_p", "e_max_p", "vies_p", "eqm_u", "e_max_u", "vies_u", "eqm_v", "e_max_v", "vies_v", "t"]
+    indice = tempos
+    array_dataframe = np.array([vetor_coefs[:,0], vetor_coefs[:,1], vetor_coefs[:,2], eqm_p, e_max_p, vies_p, eqm_u, e_max_u, vies_u, eqm_v, e_max_v, vies_v, vetor_t_calc]).T
+    dframe_erros = pd.DataFrame(index=indice, columns=cols, dtype=np.float64, data=array_dataframe)
+    dframe_erros.to_csv(os.path.join(nome_diretorio, "Resultados.csv"))
+    RepresentacaoEscoamento.plotar_dataframe_analise(dframe_erros, parametro="t", path_salvar=nome_diretorio)
+    return
+
+
 
 
 
@@ -589,7 +652,9 @@ if __name__ == "__main__":
     # teste_cavidade(tamanho=0.05, dt=0.01,T=20,Re=0.01,executa=False,formulacao="E")
     # plt.show(block=True)
     # teste_cavidade(tamanho=0.01, p0=0,  executa=True, dt=0.01, T=1.1, Re=1, formulacao="A")
-
+    for Re in (0.1,1,10,100,500,1000):
+        validacao_tempo_convergencia(Re=Re, n=100, dt=0.05, h=1.0, folga=6, T_max=100, aerofolio=AerofolioFino.NACA4412_10, formulacao="F")
+    plt.show(block=True)
     teste_poiseuille(tamanho=0.05, executa=True, dt=0.01, T=10, Re=50, formulacao="F")
     plt.show(block=False)
 
@@ -609,8 +674,13 @@ if __name__ == "__main__":
     #     plt.close("all")
 
     valores_folga=np.linspace(1,15,8)
-    for Re in (1,10,100):
-        validacao_parametros_af(parametro="folga", valores_parametro=valores_folga, n=50, Re=Re, dt=0.01, T=30, h=1., formulacao="F", aerofolio=AerofolioFino.NACA4412_10, resolucao=0.05, executa=True, plota=True)
+    valores_n=np.linspace(50,600,12).astype(int)
+    valores_dt=np.logspace(-3,-1,8)
+    valores_h=np.linspace(0.1,1,10)[::-1]
+    for Re in (1,10,100,500):
+        validacao_parametros_af(parametro="h", valores_parametro=valores_h, n=100, h=1., Re=Re, dt=0.05, T=30, formulacao="F", folga=6, aerofolio=AerofolioFino.NACA4412_10, resolucao=0.05, executa=True, plota=True)
+
+    ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
 
     plt.show(block=True)
     # for Re in (100,400,0.01,10,1000):

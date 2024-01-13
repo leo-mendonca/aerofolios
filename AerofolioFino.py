@@ -28,6 +28,7 @@ class AerofolioFino(Aerofolio) :
         ###Ponto de quarto de corda em torno do qual o momento eh calculado:
         self.x_o=1/4*np.cos(self.alfa)
         self.y_o=1/4*np.sin(self.alfa)
+        self.centro_aerodinamico=np.array((0.25,self.y_camber(0.25)))
 
     def x_med(self, eta) :
         '''Posicao horizontal da linha media do aerofolio na posicao eta (eta varia de 0 a 1 e faz as vezes de x quando o aerofolio esta horizontal)'''

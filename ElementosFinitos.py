@@ -209,12 +209,11 @@ def calcula_termo_convectivo(produtos, tensor_convectivo, tensor_pertencimento, 
     integral[nos_dirichlet] *= 0
     return integral
 
-def coeficientes_aerodinamicos(Problema, u, p, Re, x_centro):
+def coeficientes_aerodinamicos(Problema, u, p, Re, x_centro, detalhado=False):
     '''Calcula os coeficientes de arrasto, sustentacao, momento e pressao do aerofolio'''
     forcas, posicoes, tensoes=Problema.calcula_forcas(p=p,u=u,Re=Re )
     F=np.sum(forcas,axis=0)
-    forcas_p, posicoes, tensoes_p=Problema.calcula_forcas(p=p,u=u,Re=Re, viscosidade=False)
-    F_p = np.sum(forcas_p, axis=0)
+
     rho = 1.
     U0 = 1.
     D = 1.
@@ -223,13 +222,19 @@ def coeficientes_aerodinamicos(Problema, u, p, Re, x_centro):
     x_rel = posicoes - x_centro
     M = np.sum(np.cross(x_rel, forcas), axis=0)
     c_M = -M / (0.5 * rho * U0 ** 2 * D ** 2) ##O sentido do momento eh definido como positivo quando movimenta o aerofolio no sentido horario
-    pressao_a = Problema.interpola(np.array([0., 0.]), p, ordem=1)
-    pressao_b = Problema.interpola(np.array([1., 0.]), p, ordem=1)
-    c_p_a = pressao_a / (0.5 * rho * U0 ** 2)
-    c_p_b = pressao_b / (0.5 * rho * U0 ** 2)
-    c_d_p = F_p[0] / (0.5)
-    c_l_p = F_p[1] / (0.5)
-    return c_d, c_l, c_M, (c_p_a, c_p_b, c_d_p, (c_d-c_d_p), c_l_p, (c_l-c_l_p))
+    if detalhado:
+        forcas_p, posicoes, tensoes_p = Problema.calcula_forcas(p=p, u=u, Re=Re, viscosidade=False)
+        F_p = np.sum(forcas_p, axis=0)
+        pressao_a = Problema.interpola(np.array([0., 0.]), p, ordem=1)
+        pressao_b = Problema.interpola(np.array([1., 0.]), p, ordem=1)
+        c_p_a = pressao_a / (0.5 * rho * U0 ** 2)
+        c_p_b = pressao_b / (0.5 * rho * U0 ** 2)
+        c_d_p = F_p[0] / (0.5)
+        c_l_p = F_p[1] / (0.5)
+        return c_d, c_l, c_M, (c_p_a, c_p_b, c_d_p, (c_d-c_d_p), c_l_p, (c_l-c_l_p))
+    else:
+        return c_d, c_l, c_M
+
 
 
 class FEA(object):
@@ -1146,10 +1151,11 @@ class FEA(object):
                 print(f"Erro medio: {np.average(erro, axis=0)}")
             ###Salvando os valores calculados
             if cont_salvar == salvar_cada:
+                tempo_calculo=tl2-t1
                 cont_salvar = 0
                 casas_decimais = int(np.ceil(-np.log10(dt)))
                 t_nominal = np.round(t, casas_decimais)
-                resultados[t_nominal] = {"u": u, "u*": u_ast, "p": p, "p*": p_ast}
+                resultados[t_nominal] = {"u": u, "u*": u_ast, "p": p, "p*": p_ast, "t_calc": tempo_calculo}
                 tempos_salvos.append(t_nominal)
                 if len(tempos_salvos) >= 2:
                     dif_u = resultados[tempos_salvos[-1]]["u"] - resultados[tempos_salvos[-2]]["u"]
@@ -1163,6 +1169,7 @@ class FEA(object):
 
             u_n = u.copy()
             p_n = p.copy()
+        resultados[T] = {"u": u, "u*": u_ast, "p": p, "p*": p_ast}
         tfinal = time.process_time()
         print(f"Tempo para montagem das matrizes: {t2 - t1:.2f} s")
         print(f"Tempo para execucao dos passos temporais: {tfinal - t2:.2f} s")
