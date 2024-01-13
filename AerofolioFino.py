@@ -146,7 +146,7 @@ class AerofolioFinoNACA4(AerofolioFino) :
         super(AerofolioFinoNACA4, self).__init__(vetor_coeficientes, U0, alfa)
         alfa_grau=alfa*180/np.pi
         self.volume = 0.6851 * self.const_t  ##Integral de x*espessura(x) entre 0 e 1 (aproximacao!)
-        self.nome = f"NACA-{(self.const_m * 100)}-{(self.const_p * 10)}-{(self.const_t * 100)}-{int(alfa_grau)}°"
+        self.nome = f"NACA-{(self.const_m * 100):.2f}-{(self.const_p * 10):.2f}-{(self.const_t * 100):.2f}-{int(alfa_grau)}°"
 
     ##TODO validar topologia zoada com autointersecao do contorno inferior quando p eh muito pequena ou t eh muito grande
 

@@ -74,7 +74,7 @@ if __name__ == "__main__":
     distribuicoes = [distro_m, distro_p, distro_t, distro_alfa, distro_U]
 
     t0=time.process_time()
-    banco = gerar_banco_dados(distribuicoes, n_amostras=2, path_salvar="Saida/MEF_NACA4/banco_resultados.csv", metodo=calculo_mef_grosseiro)
+    banco = gerar_banco_dados(distribuicoes, n_amostras=2, path_salvar="Saida/MEF_NACA4/banco_resultados.csv", metodo=calculo_mef)
     t1=time.process_time()
     print(banco)
     print(f"Tempo de execucao: {t1-t0:.2f} s")
