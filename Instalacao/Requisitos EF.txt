@@ -1,5 +1,5 @@
-gmsh=4.11
-matplotlib=3.5
-numpy=1.24
-pandas=2.0
-scipy=1.8
+gmsh>=4.11.1,<4.12
+matplotlib>=3.5<3.6
+numpy>=1.24<1.25
+pandas>=2.0.3<2.1
+scipy>=1.8<1.9
