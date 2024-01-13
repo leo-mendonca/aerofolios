@@ -82,7 +82,7 @@ def malha_degrau(nome_modelo="Degrau", tamanho=0.2, tamanho_fino=None, S=1, L=20
     return nome_arquivo, tag_fis
 
 
-def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao, ordem=2, tamanho=tamanho_padrao, folga=10) :
+def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_contorno_padrao, ordem=2, tamanho=tamanho_padrao, folga=10, verbosidade=5) :
     '''Gera uma malha no gmsh correspondendo a regiao em torno do aerofolio'''
     contornos = {"esquerda" : 1, "direita" : 2, "superior" : 3, "inferior" : 4, }
     # n_pontos_contorno = 1000
@@ -93,6 +93,7 @@ def malha_aerofolio(aerofolio, nome_modelo="modelo", n_pontos_contorno=n_pontos_
     y_min,y_max=-folga,+folga
     ##Inicializando o gmsh
     gmsh.initialize()
+    gmsh.option.set_number("General.Verbosity",verbosidade) ##Define o nivel de verbosidade do gmsh
     gmsh.model.add(nome_modelo)  # adiciona um modelo
     gmsh.model.set_current(nome_modelo)  # define o modelo atual
     geo.addPoint(x_min, y_min, 0, tamanho, tag=1)  # ponto inferior esquerdo
@@ -166,6 +167,7 @@ def ler_malha(nome_malha, tag_fis) :
     '''
 
     gmsh.initialize()
+    gmsh.option.set_number("General.Verbosity", 0) #Muta o gmsh na leitura da malha
     gmsh.open(nome_malha)
     nos, x_nos = gmsh.model.mesh.get_nodes_for_physical_group(2, tag_fis["escoamento"])  # nos sao os indices de cada no. Na pratica, eh igual a sequencia de 1 ate n
     nos -= 1  # ajustando os indices para comecar em 0

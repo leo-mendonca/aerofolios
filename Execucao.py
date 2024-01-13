@@ -1,5 +1,5 @@
 from Definicoes import np, pd
-from Definicoes import os
+from Definicoes import os, time
 import AerofolioFino
 import ElementosFinitos
 
@@ -37,6 +37,7 @@ def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None, metodo=teoria
     for i in range(n_amostras):
         m, p, t, alfa, U0 = params_entrada[i]
         af = AerofolioFino.AerofolioFinoNACA4(vetor_coeficientes=[m, p, t], alfa=alfa, U0=U0)
+        print(f"Calculando aerofolio {af.nome}...")
         c_L, c_D, c_M = metodo(af)
         V = af.volume
         resultados.append([c_L, c_D, c_M, V])
@@ -68,9 +69,12 @@ if __name__ == "__main__":
         amostra[amostra < 0.01] = 0.01
         return amostra
 
-    distro_alfa = lambda n: np.random.normal(0, 5, n)
+    distro_alfa = lambda n: np.random.normal(0, 5*np.pi/180, n)
     distro_U = lambda n: 1 * np.random.weibull(3, n)
     distribuicoes = [distro_m, distro_p, distro_t, distro_alfa, distro_U]
 
-    banco = gerar_banco_dados(distribuicoes, n_amostras=3, path_salvar="Saida/MEF_NACA4/banco_resultados.csv", metodo=calculo_mef_grosseiro)
+    t0=time.process_time()
+    banco = gerar_banco_dados(distribuicoes, n_amostras=2, path_salvar="Saida/MEF_NACA4/banco_resultados.csv", metodo=calculo_mef_grosseiro)
+    t1=time.process_time()
     print(banco)
+    print(f"Tempo de execucao: {t1-t0:.2f} s")

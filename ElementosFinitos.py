@@ -16,9 +16,9 @@ def calculo_aerofolio(aerofolio,grosseiro=False):
     :param aerofolio: objeto da classe AerofolioFino
     '''
     if not grosseiro:
-        nome_arquivo, tag_fis = Malha.malha_aerofolio(aerofolio, aerofolio.nome, tamanho=1.0,folga=6)
+        nome_arquivo, tag_fis = Malha.malha_aerofolio(aerofolio, "Aerofolio", tamanho=1.0,folga=6, verbosidade=0)
     elif grosseiro:
-        nome_arquivo, tag_fis = Malha.malha_aerofolio(aerofolio, aerofolio.nome, tamanho=2,folga=3)
+        nome_arquivo, tag_fis = Malha.malha_aerofolio(aerofolio, "Aerofolio", tamanho=2,folga=3, verbosidade=0)
     Problema=FEA(nome_arquivo, tag_fis=tag_fis, aerofolio=aerofolio)
     viscosidade=1.
     D=1.
@@ -42,7 +42,7 @@ def calculo_aerofolio(aerofolio,grosseiro=False):
     T=50
     res=Problema.escoamento_IPCS_NS(T=T,dt=0.05, ux_dirichlet=ux_dirichlet,uy_dirichlet=uy_dirichlet,p_dirichlet=p_dirichlet,Re=Re, formulacao="F", verbosidade=0)
     u,p=res[T]["u"],res[T]["p"]
-    c_d, c_l, c_M = coeficientes_aerodinamicos(Problema, u, p, Re, x_centro=aerofolio.x_centro)
+    c_d, c_l, c_M = coeficientes_aerodinamicos(Problema, u, p, Re, x_centro=aerofolio.centro_aerodinamico)
     return c_d, c_l, c_M
 
 
@@ -1100,7 +1100,8 @@ class FEA(object):
             p_n = p.copy()
         resultados[T] = {"u": u, "u*": u_ast, "p": p, "p*": p_ast}
         tfinal = time.process_time()
-        print(f"Tempo para montagem das matrizes: {t2 - t1:.2f} s")
+        if verbosidade>=1:
+            print(f"Tempo para montagem das matrizes: {t2 - t1:.2f} s")
         print(f"Tempo para execucao dos passos temporais: {tfinal - t2:.2f} s")
         print(f"Tempo total: {tfinal - t1:.2f} s")
         return resultados
