@@ -16,6 +16,10 @@ def calculo_mef(aerofolio):
     '''Obtem os coeficientes dinamicos do aerofolio pelo metodo dos elementos finitos'''
     c_L, c_D, c_M = ElementosFinitos.calculo_aerofolio(aerofolio)
     return c_L, c_D, c_M
+def calculo_mef_grosseiro(aerofolio):
+    '''Obtem os coeficientes dinamicos do aerofolio pelo metodo dos elementos finitos'''
+    c_L, c_D, c_M = ElementosFinitos.calculo_aerofolio(aerofolio, grosseiro=True)
+    return c_L, c_D, c_M
 
 
 def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None, metodo=teoria_af_fino):
@@ -68,5 +72,5 @@ if __name__ == "__main__":
     distro_U = lambda n: 1 * np.random.weibull(3, n)
     distribuicoes = [distro_m, distro_p, distro_t, distro_alfa, distro_U]
 
-    banco = gerar_banco_dados(distribuicoes, n_amostras=3, path_salvar="Saida/MEF_NACA4/banco_resultados.csv")
+    banco = gerar_banco_dados(distribuicoes, n_amostras=3, path_salvar="Saida/MEF_NACA4/banco_resultados.csv", metodo=calculo_mef_grosseiro)
     print(banco)

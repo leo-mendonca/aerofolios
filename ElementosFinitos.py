@@ -10,12 +10,15 @@ def exporta_valores(u, t, malha, path):
     return
 
 
-def calculo_aerofolio(aerofolio):
+def calculo_aerofolio(aerofolio,grosseiro=False):
     '''
     Calcula as propriedades aerodinamicas de um aerofolio eretorna arrasto, sustentacao e momento
     :param aerofolio: objeto da classe AerofolioFino
     '''
-    nome_arquivo, tag_fis = Malha.malha_aerofolio(aerofolio, aerofolio.nome,folga=6)
+    if not grosseiro:
+        nome_arquivo, tag_fis = Malha.malha_aerofolio(aerofolio, aerofolio.nome, tamanho=1.0,folga=6)
+    elif grosseiro:
+        nome_arquivo, tag_fis = Malha.malha_aerofolio(aerofolio, aerofolio.nome, tamanho=2,folga=3)
     Problema=FEA(nome_arquivo, tag_fis=tag_fis, aerofolio=aerofolio)
     viscosidade=1.
     D=1.
@@ -36,9 +39,12 @@ def calculo_aerofolio(aerofolio):
         (Problema.nos_cont["af"], lambda x: 0.),
     ]
     p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0.), ]
-    u,p=Problema.escoamento_IPCS_NS(T=50,dt=0.05, ux_dirichlet=ux_dirichlet,uy_dirichlet=uy_dirichlet,p_dirichlet=p_dirichlet,Re=Re, formulacao="F")
+    T=50
+    res=Problema.escoamento_IPCS_NS(T=T,dt=0.05, ux_dirichlet=ux_dirichlet,uy_dirichlet=uy_dirichlet,p_dirichlet=p_dirichlet,Re=Re, formulacao="F", verbosidade=0)
+    u,p=res[T]["u"],res[T]["p"]
     c_d, c_l, c_M = coeficientes_aerodinamicos(Problema, u, p, Re, x_centro=aerofolio.x_centro)
     return c_d, c_l, c_M
+
 
 
 def coefs_aux_grad_o2(a, b, c, d, e, f, x, y):

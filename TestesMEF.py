@@ -148,8 +148,8 @@ def teste_laplace(nome_malha=None, tag_fis=None, ordem=1, n_teste=1, plota=False
 
 def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao="F", T=3, dt=0.01, Re=1., folga=6):
     nome_diretorio = f"Saida/Cilindro/Cilindro n={n} h={tamanho} dt={dt} Re={Re} T={T} folga={folga} {formulacao}"
+    cilindro = AerofolioFino.Cilindro(.5, 0, 1)
     if executa:
-        cilindro = AerofolioFino.Cilindro(.5, 0, 1)
         nome_malha, tag_fis = Malha.malha_aerofolio(cilindro, n_pontos_contorno=n, tamanho=tamanho, folga=folga)
         Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
         ux_dirichlet = [
@@ -177,7 +177,7 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
 
         # with open("Picles/resultados_forca.pkl", "rb") as f:
         #     Problema, resultados = pickle.load(f)
-        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} T={T} {formulacao}.zip")
+        nome_arquivo = os.path.join(nome_diretorio, f" n={n} h={tamanho} dt={dt} Re={Re} T={T} folga={folga} {formulacao}.zip")
         Problema, u, p, nome_malha = carregar_resultados(nome_arquivo)
 
     # forca, x, tensao = Problema.calcula_forcas(p, u, debug=debug, viscosidade=True, Re=Re)
@@ -780,8 +780,8 @@ if __name__ == "__main__":
     coefs=np.zeros(shape=(8,7),dtype=np.float64)
 
     for i, Re in enumerate((0.1,0.4,1.0,1.6,3.0,3.9,5.0,6.0)):
-        coefs[i]=teste_forca(n=100, tamanho=1., debug=False, executa=True, formulacao="F", T=50, dt=0.05, Re=Re, folga=6)
-    df=pd.DataFrame(index=(0.1,0.4,1.0,1.6,3.0,3.9,5.0,6.0),columns=("c_d","c_l","c_M","c_d_p","c_d_s","c_p_a","c_p_b"), data=coefs.T)
+        coefs[i]=teste_forca(n=100, tamanho=1., debug=False, executa=True, formulacao="F", T=50, dt=0.05, Re=Re, folga=15)
+    df=pd.DataFrame(index=(0.1,0.4,1.0,1.6,3.0,3.9,5.0,6.0),columns=("c_d","c_l","c_M","c_d_p","c_d_s","c_p_a","c_p_b"), data=coefs)
     df.to_csv(os.path.join("Saida","Aerofolio","Cilindro","Resultados.csv"))
     plt.show(block=True)
     valores_folga=np.linspace(1,15,8)
