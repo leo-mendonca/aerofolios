@@ -33,8 +33,8 @@ class RedeAerofolio(keras.Model):
         #Entrada: [camber, posicao de max. camber, espessura, angulo de ataque, velocidade do fluido]
         entrada=keras.Input(shape=(5,), name="Entrada")
         vol=CalculaVolume(name="CalculoVolume")(entrada)
-        x=keras.layers.Dense(units=100, activation=kact.tanh, use_bias=True)(entrada)
-        x=keras.layers.Dense(units=100, activation=kact.tanh, use_bias=True)(x)
+        x=keras.layers.Dense(units=10, activation=kact.tanh, use_bias=True)(entrada)
+        x=keras.layers.Dense(units=10, activation=kact.tanh, use_bias=True)(x)
         # x=keras.layers.Dense(units=10, activation=kact.tanh, use_bias=True)(x)
         saida=keras.layers.Dense(units=3, activation=None, use_bias=True, name="SaidaMecanica")(x)
         saida_completa=keras.layers.Concatenate(axis=-1, name="Concatenacao")([saida, vol])
@@ -79,7 +79,7 @@ if __name__=="__main__":
     callback_parada=keras.callbacks.EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True)
 
 
-    modelo.fit(x,y,batch_size=256, epochs=15, validation_split=0.25, callbacks=[callback_taxa, callback_log], shuffle=True)
+    modelo.fit(x,y,batch_size=256, epochs=10, validation_split=0.25, callbacks=[callback_taxa, callback_log], shuffle=True)
     avaliacao=modelo.evaluate(x,y)
     modelo.save(os.path.join(path_saida, "Modelo.keras"))
     # modelo2=keras.models.load_model(os.path.join(path_saida, "Modelo.keras"))

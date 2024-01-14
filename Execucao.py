@@ -75,7 +75,10 @@ if __name__ == "__main__":
 
     for i in range(10):
         t0 = time.process_time()
-        banco = gerar_banco_dados(distribuicoes, n_amostras=50, path_salvar="Saida/MEF_NACA4/banco_resultados.csv", metodo=calculo_mef)
+        n_amostras=10
+        print(f"Lote {i+1}/10")
+        print(f"{n_amostras*i} casos ja foram executados")
+        banco = gerar_banco_dados(distribuicoes, n_amostras=n_amostras, path_salvar="Saida/MEF_NACA4/banco_resultados.csv", metodo=calculo_mef)
         t1=time.process_time()
         print(banco)
         print(f"Tempo de execucao: {t1-t0:.2f} s")
