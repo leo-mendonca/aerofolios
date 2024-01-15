@@ -49,7 +49,7 @@ def gerar_banco_dados(distribuicoes, n_amostras, path_salvar=None, metodo=teoria
         nome_tentativo=path_salvar
         n=0
         while os.path.exists(nome_tentativo):
-            nome_tentativo = nome_tentativo[:-4] + f" {n}.csv"
+            nome_tentativo = path_salvar[:-4] + f" {n}.csv"
             n+=1
         dframe.to_csv(nome_tentativo)
     return dframe
@@ -73,10 +73,10 @@ if __name__ == "__main__":
     distro_U = lambda n: 1 * np.random.weibull(3, n)
     distribuicoes = [distro_m, distro_p, distro_t, distro_alfa, distro_U]
 
-    for i in range(10):
+    for i in range(30):
         t0 = time.process_time()
         n_amostras=10
-        print(f"Lote {i+1}/10")
+        print(f"Lote {i+1}/{n_amostras}")
         print(f"{n_amostras*i} casos ja foram executados")
         banco = gerar_banco_dados(distribuicoes, n_amostras=n_amostras, path_salvar="Saida/MEF_NACA4/banco_resultados.csv", metodo=calculo_mef)
         t1=time.process_time()
