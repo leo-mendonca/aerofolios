@@ -86,11 +86,11 @@ if __name__ == "__main__":
     distro_U_100 = lambda n: 100 * np.random.weibull(2, n)
     distribuicoes = [distro_m, distro_p, distro_t, distro_alfa, distro_U]
     distribuicoes_V2 = [distro_m_positivo, distro_p_uniforme, distro_t_uniforme, distro_alfa_uniforme, distro_U_100]
-
-    for i in range(30):
+    n_lotes=30
+    for i in range(n_lotes):
         t0 = time.process_time()
         n_amostras=10
-        print(f"Lote {i+1}/{n_amostras}")
+        print(f"Lote {i+1}/{n_lotes}")
         print(f"{n_amostras*i} casos ja foram executados")
         banco = gerar_banco_dados(distribuicoes_V2, n_amostras=n_amostras, path_salvar="Saida/MEF_NACA4/resultados_v2.csv", metodo=calculo_mef)
         t1=time.process_time()
