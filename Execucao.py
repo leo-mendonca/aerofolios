@@ -71,14 +71,28 @@ if __name__ == "__main__":
 
     distro_alfa = lambda n: np.random.normal(0, 5*np.pi/180, n)
     distro_U = lambda n: 1 * np.random.weibull(3, n)
+    def distro_m_positivo(n):
+        ##Seleciona 20% das amostras para serem nulas (aerofolio simetrico), e o restante seguira uma distribuicao uniforme
+        bool_positivos=np.random.rand(n)>0.2
+        positivo=np.random.uniform(0, 0.10, np.count_nonzero(bool_positivos))
+        zero=np.zeros(np.count_nonzero(~bool_positivos),dtype=np.float64)
+        saida=np.concatenate((positivo, zero))
+        np.random.shuffle(saida)
+        return saida
+
+    distro_p_uniforme = lambda n: np.random.uniform(0.1, 0.9, n)
+    distro_t_uniforme = lambda n: np.random.uniform(0.05, 0.3, n)
+    distro_alfa_uniforme = lambda n: np.random.uniform(-15*np.pi/180, 15*np.pi/180, n)
+    distro_U_100 = lambda n: 100 * np.random.weibull(2, n)
     distribuicoes = [distro_m, distro_p, distro_t, distro_alfa, distro_U]
+    distribuicoes_V2 = [distro_m_positivo, distro_p_uniforme, distro_t_uniforme, distro_alfa_uniforme, distro_U_100]
 
     for i in range(30):
         t0 = time.process_time()
         n_amostras=10
         print(f"Lote {i+1}/{n_amostras}")
         print(f"{n_amostras*i} casos ja foram executados")
-        banco = gerar_banco_dados(distribuicoes, n_amostras=n_amostras, path_salvar="Saida/MEF_NACA4/banco_resultados.csv", metodo=calculo_mef)
+        banco = gerar_banco_dados(distribuicoes_V2, n_amostras=n_amostras, path_salvar="Saida/MEF_NACA4/resultados_v2.csv", metodo=calculo_mef)
         t1=time.process_time()
         print(banco)
         print(f"Tempo de execucao: {t1-t0:.2f} s")
