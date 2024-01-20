@@ -728,19 +728,6 @@ def validacao_tempo_convergencia(Re=1,n=100, dt=0.05, h=1.0, folga=6,T_max=100, 
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
 if __name__ == "__main__":
     ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
 
@@ -776,6 +763,15 @@ if __name__ == "__main__":
     # for Re in (0.1, 1, 5, 10):
     #     teste_forca(n=500, tamanho=0.5, debug=False, executa=False, formulacao="F", T=20, dt=0.01, Re=Re)
     #     plt.close("all")
+    valores_Re = (10, 100, 0.01, 400, 1000)
+    for Re in valores_Re:
+        print(f"Re={Re}")
+        teste_cavidade(tamanho=0.05,dt=0.05,T=16,Re=Re, formulacao="F")
+    compara_cavidade_ref(h=0.05, dt=0.05, T=16, formulacao="F", plota=True)
+
+
+    plt.show(block=True)
+
 
     coefs=np.zeros(shape=(8,7),dtype=np.float64)
 

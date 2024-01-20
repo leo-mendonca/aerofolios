@@ -20,3 +20,6 @@ Goda, K. 1978. A multistep technique with implicit difference schemes for calcul
 Hussain, 2014. Appropriate Gaussian Quadrature for triangles
     Método de cálculo para quadratura gaussiana em triângulos (não estou utilizando no momento)
     Desenvolvimento de mudanças de variáveis apropriadas para integral em um triângulo, independente da técnica de integração, analítica ou numérica
+
+Neural networks: tools of the trade. Understanding the difficulty of training deep neural networks
+    Uso de tanh como função de ativação para redes neurais

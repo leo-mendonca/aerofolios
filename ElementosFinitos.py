@@ -953,6 +953,8 @@ class FEA(object):
         A_dirich_uy, b_dirich_uy = self.monta_matriz_dirichlet(uy_dirichlet, ordem=2)
         nos_dirich_ux = np.concatenate([cont for (cont, funcao) in ux_dirichlet])
         nos_dirich_uy = np.concatenate([cont for (cont, funcao) in uy_dirichlet])
+        A_u_ast_x = matriz_bloco1+ A_dirich_ux
+        A_u_ast_y = matriz_bloco1+ A_dirich_uy
         A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux, None], [None, matriz_bloco1 + A_dirich_uy]], format="csr")
         ##p_ast
         A_dirich_p, b_dirich_p = self.monta_matriz_dirichlet(p_dirichlet, ordem=1)
@@ -1005,18 +1007,20 @@ class FEA(object):
                     termo_convectivo_y = udvdx + vdvdy
                     vetor_convectivo = np.concatenate((termo_convectivo_x, termo_convectivo_y))
                 elif formulacao == "E":  ###Matrizes que aplicadas em um vetor w, calculam udw/dx+vdw/dy (o termo convectivo)
-                    # mat_uddx=self.monta_matriz_convectiva(u_n[:,0], D_x,  nos_dirichlet=nos_dirich_ux)
-                    # mat_vddy=self.monta_matriz_convectiva(u_n[:,1], D_y,  nos_dirichlet=nos_dirich_ux)
                     mat_uddx = tf.sparse.reduce_sum(tensor_conv_Dx * u_n[:, 0], axis=-1, output_is_sparse=True)
                     mat_vddy = tf.sparse.reduce_sum(tensor_conv_Dy * u_n[:, 1], axis=-1, output_is_sparse=True)
                     mat_convectiva_tf = tf.sparse.add(mat_uddx, mat_vddy)
                     mat_conv = ssp.coo_matrix((mat_convectiva_tf.values, (mat_convectiva_tf.indices[:, 0], mat_convectiva_tf.indices[:, 1])), shape=(len(self.nos), len(self.nos)))
                     A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_conv, None], [None, matriz_bloco1 + A_dirich_uy + mat_conv]], format="csr")
+                    A_u_ast_x = matriz_bloco1 + A_dirich_ux + mat_conv
+                    A_u_ast_y = matriz_bloco1 + A_dirich_uy + mat_conv
                 elif formulacao == "F":
                     mat_uddx = matriz_diagonal(u_n[:, 0]) @ mat_gradu_x_o2
                     mat_vddy = matriz_diagonal(u_n[:, 1]) @ mat_gradu_y_o2
                     mat_conv = mat_uddx + mat_vddy
                     A_u_ast = ssp.bmat([[matriz_bloco1 + A_dirich_ux + mat_conv, None], [None, matriz_bloco1 + A_dirich_uy + mat_conv]], format="csr")
+                    A_u_ast_x = matriz_bloco1 + A_dirich_ux + mat_conv
+                    A_u_ast_y = matriz_bloco1 + A_dirich_uy + mat_conv
 
             else:
                 vetor_convectivo = 0
@@ -1035,9 +1039,13 @@ class FEA(object):
             elif formulacao in ("E", "F"):
                 vetor_gradp = np.concatenate((mat_gradp_x @ p_n, mat_gradp_y @ p_n))
                 b_u_ast = vetor_un / dt - vetor_gradp + vetor_dirich_u
-            u_ast = ssp.linalg.spsolve(A_u_ast, b_u_ast)
-
-            u_ast = u_ast.reshape((2, len(self.nos))).T
+            b_u_ast_x= b_u_ast[:len(self.nos)]
+            b_u_ast_y = b_u_ast[len(self.nos):]
+            u_ast_x= ssp.linalg.spsolve(A_u_ast_x, b_u_ast_x)
+            u_ast_y = ssp.linalg.spsolve(A_u_ast_y, b_u_ast_y)
+            # u_ast = ssp.linalg.spsolve(A_u_ast, b_u_ast)
+            # u_ast = u_ast.reshape((2, len(self.nos))).T
+            u_ast=np.vstack((u_ast_x, u_ast_y)).T
 
             ##Calculando p*
             div_u_ast = mat_gradu_x @ u_ast[:, 0] + mat_gradu_y @ u_ast[:, 1]
@@ -1054,8 +1062,13 @@ class FEA(object):
             vetor_u_ast = np.concatenate((mat_integracao_o2 @ u_ast[:, 0], mat_integracao_o2 @ u_ast[:, 1]))
             vetor_gradp = np.concatenate((mat_gradp_x @ p_ast, mat_gradp_y @ p_ast))  ##Na formulacao B, p_ast eh o proprio p
             b_u = vetor_u_ast / dt - vetor_gradp + vetor_dirich_u
-            u = ssp.linalg.spsolve(A_u, b_u)
-            u = u.reshape((2, len(self.nos))).T
+            b_u_x= b_u[:len(self.nos)]
+            b_u_y = b_u[len(self.nos):]
+            u_x = ssp.linalg.spsolve(A_ux, b_u_x)
+            u_y = ssp.linalg.spsolve(A_uy, b_u_y)
+            u=np.vstack((u_x, u_y)).T
+            # u = ssp.linalg.spsolve(A_u, b_u)
+            # u = u.reshape((2, len(self.nos))).T
             tl2 = time.process_time()
             if verbosidade>=1:
                 print(f"Tempo de resolucao: {tl2 - tl1:.2f} s")
