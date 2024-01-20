@@ -86,7 +86,7 @@ if __name__ == "__main__":
     distro_U_100 = lambda n: 100 * np.random.weibull(2, n)
     distribuicoes = [distro_m, distro_p, distro_t, distro_alfa, distro_U]
     distribuicoes_V2 = [distro_m_positivo, distro_p_uniforme, distro_t_uniforme, distro_alfa_uniforme, distro_U_100]
-    n_lotes=30
+    n_lotes=100
     for i in range(n_lotes):
         t0 = time.process_time()
         n_amostras=10
