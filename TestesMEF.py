@@ -234,22 +234,24 @@ def teste_forca(n=20, tamanho=0.1, p0=0., debug=False, executa=True, formulacao=
 
 def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, formulacao="F"):
     if executa:
-        nome_malha, tag_fis = Malha.malha_retangular("teste 5-1", tamanho, (5, 1))
+        nome_malha, tag_fis = Malha.malha_retangular("canal 10-1", tamanho, (10, 1))
+        tag_fis["entrada"]=tag_fis.pop("esquerda")
+        tag_fis["saida"]=tag_fis.pop("direita")
         Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
         ux_dirichlet = [
-            (Problema.nos_cont["esquerda"], lambda x: 1.),
+            (Problema.nos_cont["entrada"], lambda x: 1.),
             (Problema.nos_cont["superior"], lambda x: 0.),
             (Problema.nos_cont["inferior"], lambda x: 0.),
         ]
         uy_dirichlet = [
-            (Problema.nos_cont["esquerda"], lambda x: 0.),
+            (Problema.nos_cont["entrada"], lambda x: 0.),
             (Problema.nos_cont["superior"], lambda x: 0.),
             (Problema.nos_cont["inferior"], lambda x: 0.),
         ]
-        p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: p0),
+        p_dirichlet = [(Problema.nos_cont_o1["saida"], lambda x: p0),
                        # (Problema.nos_cont_o1["esquerda"], lambda x: 1.),
                        ]
-        regiao_analitica = lambda x: np.logical_and(x[:, 0] >= 2, x[:, 0] < 4.9)
+        regiao_analitica = lambda x: np.logical_and(x[:, 0] >= 2, x[:, 0] < 9.9)
         solucao_analitica = lambda x: np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
         resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, solucao_analitica=solucao_analitica, regiao_analitica=regiao_analitica, formulacao=formulacao)
         # with open(os.path.join("Picles", "resultados Poiseuille.pkl"), "wb") as f :
@@ -265,9 +267,11 @@ def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, form
 
 
     t2 = time.process_time()
-    resolucao = tamanho / 3
+    resolucao = 0.01
     x = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
     y = np.arange(Problema.y_min, Problema.y_max + resolucao, resolucao)
+    D= Problema.y_max- Problema.y_min ##D=1 largura do duto
+    L = Problema.x_max - Problema.x_min ##L=10 comprimento do duto
     localizacao = Problema.localiza_grade(x, y)
     path_salvar = os.path.join("Saida", "Poiseuille", f"Poiseuille h={tamanho} dt={dt} Re={Re} T={T} {formulacao}")
     (x1, y1), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=path_salvar + " u.png")
@@ -281,11 +285,14 @@ def teste_poiseuille(tamanho=0.1, p0=0, Re=1., dt=0.05, T=3., executa=True, form
     t5 = time.process_time()
     print(f"Linhas de corrente calculadas em {t5 - t4:.4f} s")
     solucao_analitica = lambda x : np.vstack([6 * x[:, 1] * (1 - x[:, 1]), np.zeros(len(x))]).T
+    pressao_analitica = lambda x: 12/Re*(L/D-x[:,0])
+    x_linha_centro=np.linspace([0,D/2],[L,D/2],20)
     r = np.linspace((0., 0., 0.), (0., 1., 0.), 101)
     u_ref = solucao_analitica(r)
-    RepresentacaoEscoamento.plotar_perfis(Problema, u, lim_x=(0, 4), referencia=(r, u_ref))
+    RepresentacaoEscoamento.plotar_perfis(Problema, u, lim_x=(0, 10), referencia=(r, u_ref))
     plt.savefig(path_salvar + " perfis.png", dpi=300, bbox_inches="tight")
-
+    RepresentacaoEscoamento.plotar_pressao(Problema, p, lim_x=(0, 10), referencia=(x_linha_centro,pressao_analitica(x_linha_centro)))
+    plt.savefig(path_salvar + " pressao ao longo.png", dpi=300, bbox_inches="tight")
     # plotar_momento(Problema, resultados, 3)
     plt.show(block=False)
 
@@ -737,7 +744,7 @@ if __name__ == "__main__":
     # Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
     # plt.triplot(Problema.x_nos[:,0],Problema.x_nos[:,1],Problema.elementos_o1)
     # plt.show(block=False)
-    # teste_poiseuille(tamanho=0.1, p0=0,  executa=True, dt=0.01, T=2, Re=1, formulacao="A")
+    teste_poiseuille(tamanho=0.05, p0=0,  executa=True, dt=0.01, T=5, Re=50, formulacao="F")
     # teste_cavidade(tamanho=0.02,  dt=0.01, T=30, Re=10, formulacao="E", executa=True, debug=False)
     # teste_cavidade(tamanho=0.05, dt=0.01,T=20,Re=0.01,executa=False,formulacao="E")
     # plt.show(block=True)
@@ -748,7 +755,8 @@ if __name__ == "__main__":
     #     validacao_tempo_convergencia(Re=Re, n=100, dt=0.05, h=1.0, folga=6, T_max=100, aerofolio=AerofolioFino.NACA4412_10, formulacao="F")
     # plt.show(block=True)
     # teste_poiseuille(tamanho=0.05, executa=True, dt=0.01, T=10, Re=50, formulacao="F")
-    # plt.show(block=False)
+    plt.show(block=False)
+    plt.show(block=True)
     #
     # teste_degrau(h=0.1,h2=0.01, T=30, L=10, Re=50, compara=True)
     # plt.show(block=True)

@@ -44,13 +44,35 @@ def plotar_perfil(Problema, u, x=4, eixo=None, ordem=2):
 
 def plotar_perfis(Problema, u, lim_x=(0,5), referencia=None):
     fig, eixo = plt.subplots()
-    for x in np.arange(lim_x[0], lim_x[1]+0.000001, 1):
+    for x in np.arange(lim_x[0], lim_x[1]+0.000001, 2):
         plotar_perfil(Problema, u, x, eixo)
     if not referencia is None:
         r, u_ref = referencia
         eixo.scatter(u_ref[:,0],r[:,1], marker="*", color="black", label="Referencia")
+    eixo.set_xlabel("u")
+    eixo.set_ylabel("y")
     eixo.legend()
     return
+
+def plotar_pressao(Problema, p, lim_x=(0,10), y_med=0.5, referencia=None):
+    '''Plota a pressao na linha media de um escoamento de poiseuille'''
+    fig, eixo=plt.subplots()
+    x_linha=np.linspace(lim_x[0],lim_x[1],1001)
+    p_interp=np.array([Problema.interpola(np.array([x,y_med]),p) for x in x_linha])
+    eixo.plot(x_linha,p_interp,label=u"Pressão")
+    if not referencia is None:
+        r, p_ref=referencia
+        x_ref=r[:,0]
+        eixo.scatter(x_ref,p_ref,marker="*",color="black",label="Referencia")
+    eixo.set_xlabel("x")
+    eixo.set_ylabel("p")
+    eixo.legend()
+    return
+
+
+
+
+
 
 def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[],x_grade=None, y_grade=None, local_grade=None, plota=True, titulo="", path_salvar=None, aspecto=(6,4), operacao=None):
     '''

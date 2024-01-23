@@ -191,10 +191,16 @@ def ler_malha(nome_malha, tag_fis) :
         arestas_contorno[chave] = arestas_no_grupo(nos_contorno[chave],arestas)
 
     chaves_inv=chaves[::-1] #inverte a ordem das chaves para que o contorno de entrada seja o ultimo
-    ##Remover os nos duplicados em mais de um coinjunto de contorno
-    for i in range(len(chaves)):
-        for j in range(i+1, len(chaves)):
-            nos_contorno[chaves_inv[i]]=np.setdiff1d(nos_contorno[chaves_inv[i]], nos_contorno[chaves_inv[j]])
+    if set(["saida","superior","inferior"]).issubset(chaves) : ##hardcode para dar prioridade aos contornos de parede na saida
+        nos_contorno["saida"]=np.setdiff1d(nos_contorno["saida"], nos_contorno["superior"])
+        nos_contorno["saida"]=np.setdiff1d(nos_contorno["saida"], nos_contorno["inferior"])
+        nos_contorno["superior"]=np.setdiff1d(nos_contorno["superior"], nos_contorno["entrada"])
+        nos_contorno["inferior"]=np.setdiff1d(nos_contorno["inferior"], nos_contorno["entrada"])
+    else:
+        ##Remover os nos duplicados em mais de um coinjunto de contorno
+        for i in range(len(chaves)):
+            for j in range(i+1, len(chaves)):
+                nos_contorno[chaves_inv[i]]=np.setdiff1d(nos_contorno[chaves_inv[i]], nos_contorno[chaves_inv[j]])
 
     gmsh.finalize()
     return nos, x_nos, nos_elem, arestas, nos_contorno, x_contorno, arestas_contorno
