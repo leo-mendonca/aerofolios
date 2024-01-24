@@ -660,15 +660,17 @@ def teste_degrau(h=0.1, h2=0.05, dt=0.01, T=10, Re=100, L=30, executa=True, form
                     u_ref, y_ref = np.loadtxt(os.path.join("Entrada","Referencia","Degrau",f"Re={Re}",arquivo), delimiter=";", unpack=True, skiprows=1)
                     perfis_comparacao.append((x_ref, u_ref, y_ref))
             if len(perfis_comparacao)>0:
-                fig,eixos=plt.subplots(1,len(perfis_comparacao), figsize=(10,5))
+                fig,eixos=plt.subplots(1,len(perfis_comparacao), figsize=(15,8),sharey=True)
                 y_interp=np.linspace(-1,1,201)
+                eixos[0].set_ylabel("y")
                 for i, (x_ref, u_ref, y_ref) in enumerate(perfis_comparacao):
                     eixos[i].set_title(f"x={x_ref}")
-                    eixos[i].scatter(u_ref, y_ref, marker="*", label="Referência")
+                    eixos[i].scatter(u_ref, y_ref, marker="*", label=u"Referência")
                     u_interp=np.array([Problema.interpola(np.array((x_ref,y)), u, ordem=2) for y in y_interp])[:, 0]
-                    eixos[i].plot(u_interp, y_interp, label="Simulação")
+                    eixos[i].plot(u_interp, y_interp, label=u"Simulação")
+                    eixos[i].set_xlabel("u")
                 eixos[-1].legend()
-                fig.savefig(os.path.join(nome_diretorio, "Comparação.png"))
+                fig.savefig(os.path.join(nome_diretorio, "Comparação.png"), dpi=300, bbox_inches="tight")
     return
 
 def validacao_tempo_convergencia(Re=1,n=100, dt=0.05, h=1.0, folga=6,T_max=100, aerofolio=AerofolioFino.NACA4412_10,formulacao="F"):
@@ -744,7 +746,7 @@ if __name__ == "__main__":
     # Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
     # plt.triplot(Problema.x_nos[:,0],Problema.x_nos[:,1],Problema.elementos_o1)
     # plt.show(block=False)
-    teste_poiseuille(tamanho=0.05, p0=0,  executa=True, dt=0.01, T=5, Re=50, formulacao="F")
+    # teste_poiseuille(tamanho=0.05, p0=0,  executa=True, dt=0.01, T=5, Re=50, formulacao="F")
     # teste_cavidade(tamanho=0.02,  dt=0.01, T=30, Re=10, formulacao="E", executa=True, debug=False)
     # teste_cavidade(tamanho=0.05, dt=0.01,T=20,Re=0.01,executa=False,formulacao="E")
     # plt.show(block=True)
@@ -755,11 +757,11 @@ if __name__ == "__main__":
     #     validacao_tempo_convergencia(Re=Re, n=100, dt=0.05, h=1.0, folga=6, T_max=100, aerofolio=AerofolioFino.NACA4412_10, formulacao="F")
     # plt.show(block=True)
     # teste_poiseuille(tamanho=0.05, executa=True, dt=0.01, T=10, Re=50, formulacao="F")
-    plt.show(block=False)
-    plt.show(block=True)
-    #
-    # teste_degrau(h=0.1,h2=0.01, T=30, L=10, Re=50, compara=True)
+    # plt.show(block=False)
     # plt.show(block=True)
+    #
+    teste_degrau(h=0.05,h2=0.01, T=30, L=10, Re=50, executa=True, compara=True)
+    plt.show(block=True)
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=False, formulacao="A")
     # plt.show(block=True)
     # teste_poiseuille(0.1, 0, 1, 0.01, 2, True, "E")

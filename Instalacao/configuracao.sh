@@ -8,4 +8,5 @@ mkdir -p "../Saida/Elementos Finitos NACA4"
 mkdir -p "../Malha"
 mkdir -p "../Saida/MEF_NACA4"
 sudo apt install gmsh
+sudo apt install zip
 cd ..
