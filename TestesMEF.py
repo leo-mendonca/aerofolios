@@ -424,6 +424,86 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True):
     dframe_erros.to_csv(path_salvar + " erros.csv")
     return dframe_erros
 
+def teste_aerofolio(aerofolio, Re,n=100,h=1.0, dt=0.05,folga=6,T=50, formulacao="F", executa=True, plota_tudo=False):
+    '''Modela o escoamento em torno de um aerofolio e gera figuras correspondentes'''
+    nome_diretorio = os.path.join("Saida", "Aerofolio", f"{aerofolio.nome} h={h} dt={dt} T={T} n={n} folga={folga} {formulacao}")
+    if executa:
+        nome_diretorio=cria_diretorio(nome_diretorio)
+        nome_malha, tag_fis=Malha.malha_aerofolio(aerofolio, nome_modelo=aerofolio.nome, n_pontos_contorno=n, tamanho=h, folga=folga)
+        Problema = FEA(nome_malha, tag_fis, aerofolio)
+        ux_dirichlet = [
+            (Problema.nos_cont["esquerda"], lambda x : 1.),
+            (Problema.nos_cont["superior"], lambda x : 1.),
+            (Problema.nos_cont["inferior"], lambda x : 1.),
+            (Problema.nos_cont["af"], lambda x : 0.),
+        ]
+        uy_dirichlet = [
+            (Problema.nos_cont["esquerda"], lambda x : 0.),
+            (Problema.nos_cont["superior"], lambda x : 0.),
+            (Problema.nos_cont["inferior"], lambda x : 0.),
+            (Problema.nos_cont["af"], lambda x : 0.),
+        ]
+        p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x : 0), ]
+        resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., formulacao=formulacao, verbosidade=2)
+        u = resultados[T]["u"]
+        p = resultados[T]["p"]
+        salvar_resultados(nome_malha, tag_fis, resultados, os.path.join(nome_diretorio, f"resultados.zip"))
+    else:
+        nome_arquivo = os.path.join(nome_diretorio, f"resultados.zip")
+        Problema, u, p, nome_malha = carregar_resultados(nome_arquivo)
+    if plota_tudo:
+        resolucao = h / 3
+        x = np.arange(Problema.x_min, Problema.x_max + resolucao, resolucao)
+        y = np.arange(Problema.y_min, Problema.y_max + resolucao, resolucao)
+        localizacao = Problema.localiza_grade(x, y)
+
+        (x1, y1), mapa_u = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 0], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade horizontal", path_salvar=os.path.join(nome_diretorio, "U.png"))
+        (x1, y1), mapa_v = RepresentacaoEscoamento.mapa_de_cor(Problema, u[:, 1], ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Velocidade vertical", path_salvar=os.path.join(nome_diretorio, "V.png"))
+        (x1, y1), mapa_p = RepresentacaoEscoamento.mapa_de_cor(Problema, p, ordem=1, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Pressão", path_salvar=os.path.join(nome_diretorio, "P.png"))
+        op_conveccao_x = lambda x, l, u : Problema.conveccao_localizado(x, u, u[:, 0], l, ordem=2)
+        op_conveccao_y = lambda x, l, u : Problema.conveccao_localizado(x, u, u[:, 1], l, ordem=2)
+        (x1, y1), mapa_conveccao_x = RepresentacaoEscoamento.mapa_de_cor(Problema, u, ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Convecção da velocidade horizontal", path_salvar=os.path.join(nome_diretorio, "Conveccao U.png"), operacao=op_conveccao_x)
+        (x1, y1), mapa_conveccao_y = RepresentacaoEscoamento.mapa_de_cor(Problema, u, ordem=2, resolucao=None, x_grade=x, y_grade=y, local_grade=localizacao, titulo=u"Convecção da velocidade vertical", path_salvar=os.path.join(nome_diretorio, "Conveccao V.png"), operacao=op_conveccao_y)
+
+        iniciais = np.linspace([0.5, 0.1], [0.5, 0.9], 10)
+        ##Plotando as linhas de corrente para um lado e para o outro
+        fig, eixo2 = plt.subplots()
+        correntes = RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=iniciais, resolucao=resolucao, eixo=eixo2)
+        correntes_inversas = RepresentacaoEscoamento.linhas_de_corrente(Problema, -u, pontos_iniciais=iniciais, resolucao=resolucao, eixo=eixo2)
+        plt.savefig(os.path.join(nome_diretorio, "Correntes.png"), dpi=300, bbox_inches="tight")
+    ##plotando o mapa vazio:
+    fig, eixo1 = plt.subplots()
+    eixo1.set_ylim(Problema.y_min, Problema.y_max)
+    eixo1.set_xlim(Problema.x_min, Problema.x_max)
+    eixo1.set_aspect("equal")
+    aerofolio.desenhar(eixo1)
+    plt.savefig(os.path.join(nome_diretorio, "Aerofolio.png"), dpi=300, bbox_inches="tight")
+    ##plotando a malha
+    fig2, eixo2 = plt.subplots()
+    eixo2.set_ylim(Problema.y_min, Problema.y_max)
+    eixo2.set_xlim(Problema.x_min, Problema.x_max)
+    eixo2.set_aspect("equal")
+    eixo2.grid(False)
+    x,y,z=Problema.x_nos.T
+    elementos=Problema.elementos_o1
+    eixo2.triplot(x,y,elementos, color="k", linewidth=0.5, alpha=0.5)
+    plt.savefig(os.path.join(nome_diretorio, "Malha.png"), dpi=300, bbox_inches="tight")
+    ##Plotando apenas os contornos
+    fig3, eixo3 = plt.subplots()
+    eixo3.set_ylim(Problema.y_min, Problema.y_max)
+    eixo3.set_xlim(Problema.x_min, Problema.x_max)
+    eixo3.set_aspect("equal")
+    x,y,z=Problema.x_nos.T
+    arestas=Problema.arestas_cont_o1
+    for cont in arestas.keys():
+        linhas=Problema.x_nos[arestas[cont]][:,:,:2]
+        colecao=mcollections.LineCollection(linhas, color="k", linewidth=1, alpha=1.0)
+        eixo3.add_collection(colecao)
+    plt.savefig(os.path.join(nome_diretorio, "geometria.png"), dpi=300, bbox_inches="tight")
+    return
+
+
+
 
 def validacao_parametros_af(parametro, valores_parametro,n=100, Re=1, dt=0.01, T=30, h=0.5, folga=10, formulacao="F", aerofolio=AerofolioFino.NACA4412, resolucao=0.05, executa=True, plota=True):
     '''
@@ -663,7 +743,9 @@ def teste_degrau(h=0.1, h2=0.05, dt=0.01, T=10, Re=100, L=30, executa=True, form
                 fig,eixos=plt.subplots(1,len(perfis_comparacao), figsize=(15,8),sharey=True)
                 y_interp=np.linspace(-1,1,201)
                 eixos[0].set_ylabel("y")
+                eixos[0].set_ylim(-1,1)
                 for i, (x_ref, u_ref, y_ref) in enumerate(perfis_comparacao):
+                    eixos[i].set_xlim(-0.2,1.6)
                     eixos[i].set_title(f"x={x_ref}")
                     eixos[i].scatter(u_ref, y_ref, marker="*", label=u"Referência")
                     u_interp=np.array([Problema.interpola(np.array((x_ref,y)), u, ordem=2) for y in y_interp])[:, 0]
@@ -739,6 +821,7 @@ def validacao_tempo_convergencia(Re=1,n=100, dt=0.05, h=1.0, folga=6,T_max=100, 
 
 if __name__ == "__main__":
     ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
+    teste_aerofolio(AerofolioFino.NACA4412_10, n=100, h=1.0, folga=2, T=30, dt=0.05, Re=50, formulacao="F", executa=True)
 
 
     # af=AerofolioFino.NACA4412_10
@@ -760,7 +843,7 @@ if __name__ == "__main__":
     # plt.show(block=False)
     # plt.show(block=True)
     #
-    teste_degrau(h=0.05,h2=0.01, T=30, L=10, Re=50, executa=True, compara=True)
+    # teste_degrau(h=0.1,h2=0.01, T=30, L=10, Re=50, executa=False, compara=True)
     plt.show(block=True)
     # teste_cavidade(tamanho=0.05, dt=0.01, T=5, Re=1, executa=False, formulacao="A")
     # plt.show(block=True)

@@ -117,25 +117,27 @@ class AerofolioFino(Aerofolio) :
         y = self.y_camber(x)
         eixo.plot(x, y, color="black")
 
-    def desenhar(self) :
-        fig, eixo = plt.subplots()
-        fig.set_size_inches(7.5, 5)
+    def desenhar(self, eixo=None) :
+        if eixo is None:
+            fig, eixo = plt.subplots()
+            fig.set_size_inches(7.5, 5)
+            eixo.set_xlim(-0.05, 1.05)
+            eixo.set_ylim(-0.2, 0.2)
+            eixo.set_aspect("equal")
         x = np.arange(0, 1.01, 0.001)
         x1 = self.x_sup(x)
         x2 = self.x_inf(x)
-        y = self.y_camber(x)
+        ymed = self.y_med(x)
+        xmed=self.x_med(x)
         y1 = self.y_sup(x)
         y2 = self.y_inf(x)
-        eixo.set_xlim(-0.05, 1.05)
-        eixo.set_ylim(-0.2, 0.2)
-        eixo.set_aspect("equal")
         eixo.plot(x1, y1, color="black")
         eixo.plot(x2, y2, color="black")
         x_poli, y_poli=np.concatenate((x1, x2[::-1])), np.concatenate((y1, y2[::-1])) ##poligono fechado que repreesent o aerofolio
         eixo.fill(x_poli, y_poli, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
         # eixo.fill_between(x1, y1, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
         # eixo.fill_between(x2, y2, color=mcolors.CSS4_COLORS["lightgreen"], alpha=0.3)
-        eixo.plot(x, y, color="gray", linestyle="dashed", alpha=0.5)
+        eixo.plot(xmed, ymed, color="gray", linestyle="dashed", alpha=0.5)
 
 
 class AerofolioFinoNACA4(AerofolioFino) :

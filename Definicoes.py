@@ -6,6 +6,7 @@ import scipy.sparse.linalg
 # matplotlib.use("QtAgg")
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+import matplotlib.collections as mcollections
 import matplotlib
 import gmsh
 import warnings
