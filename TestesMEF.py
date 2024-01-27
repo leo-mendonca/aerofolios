@@ -535,23 +535,23 @@ def validacao_parametros_af(parametro, valores_parametro,n=100, Re=1, dt=0.01, T
         elif parametro == "h": h = param
         elif parametro == "folga": folga = param
         else: raise ValueError(f"Parametro {parametro} invalido")
-        nome_malha, tag_fis = Malha.malha_aerofolio(aerofolio, n_pontos_contorno=n, tamanho=h, folga=folga)
-        Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
-        ux_dirichlet = [
-            (Problema.nos_cont["esquerda"], lambda x: 1.),
-            (Problema.nos_cont["superior"], lambda x: 1.),
-            (Problema.nos_cont["inferior"], lambda x: 1.),
-            (Problema.nos_cont["af"], lambda x: 0.),
-        ]
-        uy_dirichlet = [
-            (Problema.nos_cont["esquerda"], lambda x: 0.),
-            (Problema.nos_cont["superior"], lambda x: 0.),
-            (Problema.nos_cont["inferior"], lambda x: 0.),
-            (Problema.nos_cont["af"], lambda x: 0.),
-        ]
-        p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0), ]
-
         if executa:
+            nome_malha, tag_fis = Malha.malha_aerofolio(aerofolio, n_pontos_contorno=n, tamanho=h, folga=folga)
+            Problema = ElementosFinitos.FEA(nome_malha, tag_fis)
+            ux_dirichlet = [
+                (Problema.nos_cont["esquerda"], lambda x: 1.),
+                (Problema.nos_cont["superior"], lambda x: 1.),
+                (Problema.nos_cont["inferior"], lambda x: 1.),
+                (Problema.nos_cont["af"], lambda x: 0.),
+            ]
+            uy_dirichlet = [
+                (Problema.nos_cont["esquerda"], lambda x: 0.),
+                (Problema.nos_cont["superior"], lambda x: 0.),
+                (Problema.nos_cont["inferior"], lambda x: 0.),
+                (Problema.nos_cont["af"], lambda x: 0.),
+            ]
+            p_dirichlet = [(Problema.nos_cont_o1["direita"], lambda x: 0), ]
+
             t1 = time.process_time()
             resultados = Problema.escoamento_IPCS_NS(ux_dirichlet=ux_dirichlet, uy_dirichlet=uy_dirichlet, p_dirichlet=p_dirichlet, T=T, dt=dt, Re=Re, u0=1., formulacao=formulacao)
             t2 = time.process_time()
@@ -571,7 +571,7 @@ def validacao_parametros_af(parametro, valores_parametro,n=100, Re=1, dt=0.01, T
         mapas_u[i] = mapa_u
         mapas_v[i] = mapa_v
         mapas_p[i] = mapa_p
-        c_d, c_l, c_M, outros = ElementosFinitos.coeficientes_aerodinamicos(Problema, u, p, Re=Re, x_centro=np.array([0.25, 0.]))
+        c_d, c_l, c_M = ElementosFinitos.coeficientes_aerodinamicos(Problema, u, p, Re=Re, x_centro=np.array([0.25, 0.]))
         coefs_arrasto[i] = c_d
         coefs_sustentacao[i] = c_l
         coefs_momento[i] = c_M
@@ -822,7 +822,9 @@ def validacao_tempo_convergencia(Re=1,n=100, dt=0.05, h=1.0, folga=6,T_max=100, 
 if __name__ == "__main__":
     ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
     teste_aerofolio(AerofolioFino.NACA4412_10, n=100, h=1.0, folga=2, T=30, dt=0.05, Re=50, formulacao="F", executa=True)
-
+    valores_n = np.linspace(50, 500, 10).astype(int)
+    validacao_parametros_af(parametro="n", valores_parametro=valores_n, n=100, h=1., Re=1, dt=0.01, T=50, formulacao="F", folga=6, aerofolio=AerofolioFino.NACA4412_10, resolucao=0.05, executa=True, plota=True)
+    raise SystemExit
 
     # af=AerofolioFino.NACA4412_10
     # nome_malha,tag_fis=Malha.malha_aerofolio(af, n_pontos_contorno=50, tamanho=0.5, folga=3)
@@ -878,7 +880,7 @@ if __name__ == "__main__":
     valores_dt=np.logspace(-3,-1,8)
     valores_h=np.linspace(0.1,1,10)[::-1]
     for Re in (1,10,100,500):
-        validacao_parametros_af(parametro="h", valores_parametro=valores_h, n=100, h=1., Re=Re, dt=0.05, T=30, formulacao="F", folga=6, aerofolio=AerofolioFino.NACA4412_10, resolucao=0.05, executa=True, plota=True)
+        validacao_parametros_af(parametro="n", valores_parametro=valores_n, n=100, h=1., Re=Re, dt=0.05, T=30, formulacao="F", folga=10, aerofolio=AerofolioFino.NACA4412_10, resolucao=0.05, executa=False, plota=True)
 
     ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
 
