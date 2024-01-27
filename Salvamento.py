@@ -68,3 +68,43 @@ def adimensionaliza_referencia(nome_arquivo, U, D, offset_y):
     dframe["U"]*=1/U
     dframe.to_csv(nome_arquivo, sep=";", index=False)
 
+def junta_csv(path, identificador=None):
+    '''Junta todos os arquivos .csv de um diretorio em um unico arquivo. Os arquivos devem estar dentro de subpastas e ter o mesmo cabecalho
+    Se identificador nao for nulo, separa o arquivo entre aqueles que tem e nao tem o identificador
+    '''
+    if not identificador is None:
+        nome_saida_id=os.path.join(path, f"saida_{identificador}.csv")
+        lista_arquivos_id=[]
+    nome_saida=os.path.join(path, "saida.csv")
+    lista_arquivos=[]
+    for item in os.listdir(path):
+        if os.path.isdir(os.path.join(path, item)):
+            for arquivo in os.listdir(os.path.join(path, item)):
+                if arquivo.endswith(".csv"):
+                    if identificador is None:
+                        lista_arquivos.append(os.path.join(path, item, arquivo))
+                    else:
+                        if identificador in arquivo:
+                            lista_arquivos_id.append(os.path.join(path, item, arquivo))
+                        else:
+                            lista_arquivos.append(os.path.join(path, item, arquivo))
+    lista_dframes=[pd.read_csv(arquivo, sep=",", skipinitialspace=True) for arquivo in lista_arquivos]
+    dframe=pd.concat(lista_dframes, ignore_index=True)
+    try:
+        dframe.drop(columns=["Unnamed: 0"], inplace=True)
+    except KeyError:pass
+    dframe.to_csv(nome_saida, sep=";", index=False)
+    lista_dframes_id=[pd.read_csv(arquivo, sep=",", skipinitialspace=True) for arquivo in lista_arquivos_id]
+    if not identificador is None:
+        dframe_id=pd.concat(lista_dframes_id, ignore_index=True)
+        try:
+            dframe_id.drop(columns=["Unnamed: 0"], inplace=True)
+        except KeyError:pass
+        dframe_id.to_csv(nome_saida_id, sep=";", index=False)
+    return
+
+if __name__ == "__main__":
+    # adimensionaliza_referencia("referencia.csv", 0.1, 0.1, 0.1)
+    junta_csv(os.path.join("Entrada","Dados"), "_v2")
+
+
