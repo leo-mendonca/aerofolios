@@ -103,6 +103,14 @@ def junta_csv(path, identificador=None):
         dframe_id.to_csv(nome_saida_id, sep=";", index=False)
     return
 
+def filtragem_outliers(dframe):
+    '''Filtra outliers de um dataframe de resultados. Os outliers sao definidos como aqueles com c_d,c_l ou c_m >100'''
+    saida=dframe.copy()
+    for coluna in ["c_L", "c_D", "c_M"]:
+        saida=saida.loc[saida[coluna]<100]
+    return saida
+
+
 if __name__ == "__main__":
     # adimensionaliza_referencia("referencia.csv", 0.1, 0.1, 0.1)
     junta_csv(os.path.join("Entrada","Dados"), "_v2")

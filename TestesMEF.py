@@ -500,6 +500,7 @@ def teste_aerofolio(aerofolio, Re,n=100,h=1.0, dt=0.05,folga=6,T=50, formulacao=
         colecao=mcollections.LineCollection(linhas, color="k", linewidth=1, alpha=1.0)
         eixo3.add_collection(colecao)
     plt.savefig(os.path.join(nome_diretorio, "geometria.png"), dpi=300, bbox_inches="tight")
+    c_d, c_l, c_M = ElementosFinitos.coeficientes_aerodinamicos(Problema, u, p, Re, x_centro=aerofolio.centro_aerodinamico)
     return
 
 
@@ -821,9 +822,10 @@ def validacao_tempo_convergencia(Re=1,n=100, dt=0.05, h=1.0, folga=6,T_max=100, 
 
 if __name__ == "__main__":
     ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
-    teste_aerofolio(AerofolioFino.NACA4412_10, n=100, h=1.0, folga=2, T=30, dt=0.05, Re=50, formulacao="F", executa=True)
-    valores_n = np.linspace(50, 500, 10).astype(int)
-    validacao_parametros_af(parametro="n", valores_parametro=valores_n, n=100, h=1., Re=1, dt=0.01, T=50, formulacao="F", folga=6, aerofolio=AerofolioFino.NACA4412_10, resolucao=0.05, executa=True, plota=True)
+    af = AerofolioFino.AerofolioFinoNACA4([0.0885, 0.714789, 0.198262], 0.134256, 32.7974)
+    teste_aerofolio(af, n=100, h=1.0, folga=6, T=30, dt=0.05, Re=33, formulacao="F", executa=False)
+    # valores_n = np.linspace(50, 500, 10).astype(int)
+    # validacao_parametros_af(parametro="n", valores_parametro=valores_n, n=100, h=1., Re=1, dt=0.01, T=50, formulacao="F", folga=6, aerofolio=AerofolioFino.NACA4412_10, resolucao=0.05, executa=True, plota=True)
     raise SystemExit
 
     # af=AerofolioFino.NACA4412_10

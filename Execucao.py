@@ -15,7 +15,7 @@ def teoria_af_fino(aerofolio):
 def calculo_mef(aerofolio):
     '''Obtem os coeficientes dinamicos do aerofolio pelo metodo dos elementos finitos'''
     c_L, c_D, c_M = ElementosFinitos.calculo_aerofolio(aerofolio)
-    return c_L, c_D, c_M
+    return c_D, c_L, c_M
 def calculo_mef_grosseiro(aerofolio):
     '''Obtem os coeficientes dinamicos do aerofolio pelo metodo dos elementos finitos'''
     c_L, c_D, c_M = ElementosFinitos.calculo_aerofolio(aerofolio, grosseiro=True)
