@@ -107,7 +107,7 @@ def filtragem_outliers(dframe):
     '''Filtra outliers de um dataframe de resultados. Os outliers sao definidos como aqueles com c_d,c_l ou c_m >100'''
     saida=dframe.copy()
     for coluna in ["c_L", "c_D", "c_M"]:
-        saida=saida.loc[saida[coluna]<100]
+        saida=saida.loc[saida[coluna]<10]
     return saida
 
 
