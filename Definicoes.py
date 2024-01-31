@@ -7,6 +7,7 @@ import scipy.sparse.linalg
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.collections as mcollections
+import matplotlib.ticker as mtick
 import matplotlib
 import gmsh
 import warnings

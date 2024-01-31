@@ -103,7 +103,7 @@ def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios, path_dados=os.pat
     otimizador = kopt.Adam(learning_rate=eta)
     metricas = [keras.metrics.CosineSimilarity(name="Cosseno"), keras.metrics.MeanSquaredError(name="EQM"), MetricaEQMComponente(0, name="EQM_D"), MetricaEQMComponente(1, name="EQM_L"), MetricaEQMComponente(2, name="EQM_M")]
     modelo.compile(optimizer=otimizador, loss=keras.losses.MeanSquaredError(name="MSE"), metrics=metricas)
-    modelo.summary()
+    # modelo.summary()
     keras.utils.plot_model(modelo, to_file=os.path.join(path_saida, "RedeAerofolio.png"), show_shapes=True, show_layer_names=True, show_layer_activations=True, show_trainable=True, dpi=300)
     callback_taxa = keras.callbacks.LearningRateScheduler(lambda *args: scheduler(*args, k=decaimento))
     callback_log = keras.callbacks.CSVLogger(os.path.join(path_saida, "Log.csv"))
@@ -185,6 +185,58 @@ def analisa_hiperparametros(valores_eta, valores_k, valores_lambda, camadas, neu
     print(resultados)
     return resultados
 
+def plotar_saida_arquitetura(path_resultados):
+    '''plota os resultados da analise de arquitetura. Avalia o erro e o tempo computacional em funcao do numero de neuronios e camadas'''
+    resultados=pd.read_csv(path_resultados, sep=";", skipinitialspace=True)
+    camadas=resultados["camadas"]
+    neuronios=resultados["neuronios"]
+    e=resultados["EQM"]
+    tempo=resultados["tempo"]
+    e_log=np.log10(e)
+    t_log=np.log10(tempo)
+    fig1=plt.figure()
+    eixo1=fig1.add_subplot(projection="3d")
+    log_locator=lambda x, pos=None: f"$10^{{{int(x)}}}$"
+    eixo1.zaxis.set_major_formatter(mtick.FuncFormatter(log_locator))
+    eixo1.zaxis.set_major_locator(mtick.MaxNLocator(integer=True))
+    eixo1.plot_trisurf(camadas, neuronios, e_log)
+    eixo1.set_xlabel("Camadas")
+    eixo1.set_ylabel("Neuronios")
+    eixo1.set_zlabel("EQM")
+
+    fig2=plt.figure()
+    eixo2=fig2.add_subplot(projection="3d")
+    eixo2.plot_trisurf(camadas, neuronios, tempo)
+    eixo2.set_xlabel("Camadas")
+    eixo2.set_ylabel("Neuronios")
+    eixo2.set_zlabel("Tempo [s]")
+
+    ##Faz um plot heatmap das mesmas grandezas acima
+    fig3, eixo3=plt.subplots()
+    fig3.set_size_inches(6,4)
+    eixo3.grid(False)
+    eixo3.set_xlabel("Camadas")
+    eixo3.set_ylabel("Neuronios")
+    eixo3.set_title("EQM")
+    x_grid, y_grid=np.meshgrid(camadas.unique(), neuronios.unique())
+    e_grid=np.array([[resultados.loc[np.logical_and(resultados["camadas"]==x, resultados["neuronios"]==y),"EQM"].values[0]  for y in neuronios.unique()]for x in camadas.unique()])
+    mapa_erro=eixo3.pcolormesh(x_grid, y_grid, e_grid, cmap="turbo", norm=mcolors.LogNorm())
+    # eixo3.imshow(e.values.reshape(len(camadas.unique()), len(neuronios.unique())), cmap="turbo", origin="lower", norm=mcolors.LogNorm())
+    fig3.colorbar(mapa_erro)
+    plt.savefig(os.path.join("Saida","Redes Neurais","Mapa de calor EQM.png"), dpi=300, bbox_inches="tight", transparent=True)
+    fig4, eixo4=plt.subplots()
+    eixo4.grid(False)
+    fig4.set_size_inches(6,4)
+    eixo4.set_xlabel("Camadas")
+    eixo4.set_ylabel("Neuronios")
+    eixo4.set_title("Tempo [s]")
+    t_grid=np.array([[resultados.loc[np.logical_and(resultados["camadas"]==x, resultados["neuronios"]==y),"tempo"].values[0]  for y in neuronios.unique()]for x in camadas.unique()])
+    mapa_tempo=eixo4.pcolormesh(x_grid, y_grid, t_grid, cmap="turbo")
+    # eixo4.imshow(tempo.values.reshape(len(camadas.unique()), len(neuronios.unique())), cmap="turbo", origin="lower")
+    fig4.colorbar(mapa_tempo)
+    plt.savefig(os.path.join("Saida","Redes Neurais","Mapa de calor Tempo.png"), dpi=300, bbox_inches="tight", transparent=True)
+    return
+
 
 if __name__=="__main__":
     # modelo1, avaliacao1=treinar_rede( 0.001, 0.95, 0.01,1,50)
@@ -210,13 +262,20 @@ if __name__=="__main__":
     # print(resultados)
     # modelo,avaliacao,tempo=treinar_rede(0.001, 0.95, 1E-5, 1, 10)
     # modelo2,avaliacao2,tempo2=carregar_rede(0.001, 0.95, 1E-5, 1, 10)
-
+    # plotar_saida_arquitetura(os.path.join("Saida", "Redes Neurais", "Comparacao hiperparametros.csv"))
+    ##Arquitetura: 8x40
     k = [0.95,]
     eta = [0.001,]
-    lamda = [1E-5,]
-    camadas = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-    neuronios = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    # lamda = [1E-5,]
+    lamda=np.logspace(-6,-1,26)
+    # camadas = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    # neuronios = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+    camadas=[8,]
+    neuronios=[40,]
     resultados=analisa_hiperparametros(eta, k, lamda, camadas, neuronios, executa=True)
+
+
+
 
     # modelo,avaliacao=treinar_rede(eta, k, lamda, 6, 51)
     # resultados = pd.DataFrame(index=pd.MultiIndex.from_product((camadas, neuronios)), columns=["perda", "cosseno", "perda_D", "perda_L", "perda_M", "tempo"], dtype=np.float64)
