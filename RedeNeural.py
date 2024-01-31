@@ -92,7 +92,7 @@ def plota_log(path):
 
     return log
 
-def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios):
+def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios, path_dados=os.path.join("Entrada", "Dados", "dados_mef_v2.csv")):
     '''Treina uma rede neural com os parametros fornecidos e salva os resultados em uma pasta'''
     nome_caso=f"Rede eta={eta} k={decaimento} lambda={lamda} camadas={n_camadas}x{neuronios}"
     nome_modelo="Rede"
@@ -101,14 +101,19 @@ def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios):
     x, y, x_val, y_val, x_teste, y_teste = carrega_dados(os.path.join("Entrada", "Dados", "dados_mef_v2.csv"))
     modelo = RedeAerofolio(n_camadas, neuronios, lamda, name=nome_modelo)
     otimizador = kopt.Adam(learning_rate=eta)
-    metricas = [keras.metrics.CosineSimilarity(name="Cosseno"), MetricaEQMComponente(0, name="EQM_D"), MetricaEQMComponente(1, name="EQM_L"), MetricaEQMComponente(2, name="EQM_M")]
+    metricas = [keras.metrics.CosineSimilarity(name="Cosseno"), keras.metrics.MeanSquaredError(name="EQM"), MetricaEQMComponente(0, name="EQM_D"), MetricaEQMComponente(1, name="EQM_L"), MetricaEQMComponente(2, name="EQM_M")]
     modelo.compile(optimizer=otimizador, loss=keras.losses.MeanSquaredError(name="MSE"), metrics=metricas)
     modelo.summary()
     keras.utils.plot_model(modelo, to_file=os.path.join(path_saida, "RedeAerofolio.png"), show_shapes=True, show_layer_names=True, show_layer_activations=True, show_trainable=True, dpi=300)
     callback_taxa = keras.callbacks.LearningRateScheduler(lambda *args: scheduler(*args, k=decaimento))
     callback_log = keras.callbacks.CSVLogger(os.path.join(path_saida, "Log.csv"))
     callback_parada = keras.callbacks.EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True, min_delta=1E-4)
+    t0=time.process_time()
     modelo.fit(x, y, validation_data=(x_val, y_val), batch_size=64, epochs=100, callbacks=[callback_taxa, callback_log, callback_parada], shuffle=True)
+    t1=time.process_time()
+    tempo=t1-t0
+    with open(os.path.join(path_saida, "Tempo.txt"), "w") as arquivo:
+        arquivo.write(f"{tempo} s")
     avaliacao = modelo.evaluate(x_val, y_val)
     modelo.save(os.path.join(path_saida, "Modelo.keras"))
     log=plota_log(os.path.join(path_saida,"Log.csv"))
@@ -120,16 +125,65 @@ def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios):
     plt.scatter(ymed[:, 2], ypred[:, 2], label="c_M",s=5)
     plt.legend()
     plt.savefig(os.path.join(path_saida,"Desempenho da rede - Aerofolio fino.png"), dpi=300)
-    return modelo, avaliacao
+    return modelo, avaliacao, tempo
 
+@keras.saving.register_keras_serializable()
 def metrica_eqm_componente(y_true, y_pred, n):
     '''Calcula o erro quadratico medio da n-esima compnente do vetor de saida'''
     return keras.losses.mean_squared_error(y_true[:,n], y_pred[:,n])
 
+@keras.saving.register_keras_serializable()
 class MetricaEQMComponente(keras.metrics.MeanMetricWrapper):
     def __init__(self, n, name="EQM",dtype=None):
-        f=lambda y_true, y_pred: metrica_eqm_componente(y_true, y_pred, n)
-        super(MetricaEQMComponente, self).__init__(f,name=name,dtype=dtype)
+        self.n=n
+        super(MetricaEQMComponente, self).__init__(lambda y_true, y_pred: metrica_eqm_componente(y_true, y_pred, n),name=name,dtype=dtype)
+
+    def get_config(self):
+        '''Salva as configuracoes da camada para que ela possa ser reconstruida pelo keras'''
+        base_config=super().get_config()
+        config= {"n":self.n}
+        return {**base_config, **config}
+
+    @classmethod
+    def from_config(cls, config):
+        '''Reconstrói a camada a partir das configuracoes salvas'''
+        n=config.pop("n")
+        return cls(n, **config)
+
+
+def carregar_rede(eta, k, lamda, camadas, neuronios, path_dados=os.path.join("Entrada", "Dados", "dados_mef_v2.csv")):
+    '''Carrega os pesos e os resultados de uma rede neural ja devidamente treinada e analisa o desempenho dessa rede nos dados de validacao'''
+    nome_caso=f"Rede eta={eta} k={k} lambda={lamda} camadas={camadas}x{neuronios}"
+    path_saida = os.path.join("Saida", "Redes Neurais", nome_caso)
+    modelo = keras.models.load_model(os.path.join(path_saida, "Modelo.keras"), custom_objects={"CalculaVolume":CalculaVolume})
+    x, y, x_val, y_val, x_teste, y_teste = carrega_dados(path_dados)
+    avaliacao = modelo.evaluate(x_val, y_val)
+    with open(os.path.join(path_saida, "Tempo.txt"), "r") as arquivo:
+        tempo=float(arquivo.read().rstrip(" s"))
+    return modelo, avaliacao, tempo
+
+
+
+def analisa_hiperparametros(valores_eta, valores_k, valores_lambda, camadas, neuronios, executa=True, path_dados=os.path.join("Entrada", "Dados", "dados_mef_v2.csv")):
+    '''Analisa o desempenho de uma rede neural variando os hiperparametros eta, k e lambda'''
+    resultados=pd.DataFrame(index=pd.MultiIndex.from_product((camadas,neuronios,valores_eta, valores_k, valores_lambda)), columns=["perda","cosseno", "vies", "logcosh", "tempo"], dtype=np.float64)
+    resultados = pd.DataFrame(index=pd.MultiIndex.from_product((camadas, neuronios,valores_eta, valores_k, valores_lambda)), columns=["perda", "cosseno", "EQM", "EQM_D", "EQM_L", "EQM_M", "tempo"], dtype=np.float64)
+    for eta in valores_eta:
+        for k in valores_k:
+            for lamda in valores_lambda:
+                for n_camadas in camadas:
+                    for n_neuronios in neuronios:
+                        print(f"Avaliando rede com eta={eta}, k={k}, lambda={lamda}, camadas={n_camadas}x{n_neuronios}")
+                        if executa:
+                            modelo, avaliacao, tempo = treinar_rede(eta, k, lamda, n_camadas, n_neuronios, path_dados)
+                        else:
+                            modelo, avaliacao, tempo = carregar_rede(eta, k, lamda, n_camadas, n_neuronios, path_dados)
+                        resultados.loc[(n_camadas, n_neuronios,eta,k,lamda)] = np.concatenate([avaliacao, [tempo]])
+                        print(resultados.loc[(n_camadas, n_neuronios,eta,k,lamda)])
+                        plt.close("all")
+    resultados.to_csv(os.path.join("Saida", "Redes Neurais", "Comparacao hiperparametros.csv"), sep=";", index_label=["camadas","neuronios","eta", "k", "lambda"])
+    print(resultados)
+    return resultados
 
 
 if __name__=="__main__":
@@ -154,23 +208,29 @@ if __name__=="__main__":
     #     plt.close("all")
     # resultados.to_csv(os.path.join("Saida","Redes Neurais","Comparacao lambda.csv"), sep=";", index_label="lambda")
     # print(resultados)
-    k = 0.95
-    eta = 0.001
-    lamda = 1E-5
+    # modelo,avaliacao,tempo=treinar_rede(0.001, 0.95, 1E-5, 1, 10)
+    # modelo2,avaliacao2,tempo2=carregar_rede(0.001, 0.95, 1E-5, 1, 10)
+
+    k = [0.95,]
+    eta = [0.001,]
+    lamda = [1E-5,]
     camadas = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     neuronios = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-    resultados = pd.DataFrame(index=pd.MultiIndex.from_product((camadas, neuronios)), columns=["perda", "cosseno", "perda_D", "perda_L", "perda_M", "tempo"], dtype=np.float64)
-    for n_camadas in camadas:
-        for n_neuronios in neuronios:
-            t0 = time.process_time()
-            modelo, avaliacao = treinar_rede(eta, k, lamda, n_camadas, n_neuronios)
-            t1 = time.process_time()
-            tempo = t1 - t0
-            resultados.loc[(n_camadas, n_neuronios)] = np.concatenate([avaliacao, [tempo]])
-            print(resultados.loc[(n_camadas, n_neuronios)])
-            plt.close("all")
-    resultados.to_csv(os.path.join("Saida", "Redes Neurais", "Comparacao arquitetura.csv"), sep=";", index_label=["camadas", "neuronios"])
-    print(resultados)
+    resultados=analisa_hiperparametros(eta, k, lamda, camadas, neuronios, executa=True)
+
+    # modelo,avaliacao=treinar_rede(eta, k, lamda, 6, 51)
+    # resultados = pd.DataFrame(index=pd.MultiIndex.from_product((camadas, neuronios)), columns=["perda", "cosseno", "perda_D", "perda_L", "perda_M", "tempo"], dtype=np.float64)
+    # for n_camadas in camadas:
+    #     for n_neuronios in neuronios:
+    #         t0 = time.process_time()
+    #         modelo, avaliacao = treinar_rede(eta, k, lamda, n_camadas, n_neuronios)
+    #         t1 = time.process_time()
+    #         tempo = t1 - t0
+    #         resultados.loc[(n_camadas, n_neuronios)] = np.concatenate([avaliacao, [tempo]])
+    #         print(resultados.loc[(n_camadas, n_neuronios)])
+    #         plt.close("all")
+    # resultados.to_csv(os.path.join("Saida", "Redes Neurais", "Comparacao arquitetura.csv"), sep=";", index_label=["camadas", "neuronios"])
+    # print(resultados)
 
 
 
