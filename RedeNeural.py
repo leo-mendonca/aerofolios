@@ -89,7 +89,6 @@ def plota_log(path):
     plt.plot(log["epoch"].array, log["lr"].array, label="aprendizado")
     plt.xlabel("Epoca")
     plt.ylabel("Taxa de aprendizado")
-
     return log
 
 def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios, path_dados=os.path.join("Entrada", "Dados", "dados_mef_v2.csv")):
@@ -98,7 +97,7 @@ def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios, path_dados=os.pat
     nome_modelo="Rede"
     path_saida=os.path.join("Saida","Redes Neurais", nome_caso)
     os.makedirs(path_saida, exist_ok=True)
-    x, y, x_val, y_val, x_teste, y_teste = carrega_dados(os.path.join("Entrada", "Dados", "dados_mef_v2.csv"))
+    x, y, x_val, y_val, x_teste, y_teste = carrega_dados(path_dados)
     modelo = RedeAerofolio(n_camadas, neuronios, lamda, name=nome_modelo)
     otimizador = kopt.Adam(learning_rate=eta)
     metricas = [keras.metrics.CosineSimilarity(name="Cosseno"), keras.metrics.MeanSquaredError(name="EQM"), MetricaEQMComponente(0, name="EQM_D"), MetricaEQMComponente(1, name="EQM_L"), MetricaEQMComponente(2, name="EQM_M")]
