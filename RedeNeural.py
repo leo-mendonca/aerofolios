@@ -39,13 +39,13 @@ class RedeAerofolio(keras.Model):
 
         entrada=keras.Input(shape=(5,), name="Entrada")
         # normalizacao=keras.layers.Normalization(name="Normalizacao")(entrada)
-        vol=CalculaVolume(name="CalculoVolume")(entrada)
+        # vol=CalculaVolume(name="CalculoVolume")(entrada)
         x = keras.layers.Dense(units=n_neuronios, activation=kact.tanh, use_bias=True, kernel_regularizer=keras.regularizers.L2(lamda))(entrada)
         for i in range(n_camadas-1):
             x=keras.layers.Dense(units=n_neuronios, activation=kact.tanh, use_bias=True)(x)
         saida=keras.layers.Dense(units=3, activation=None, use_bias=True, name="SaidaMecanica")(x)
-        saida_completa=keras.layers.Concatenate(axis=-1, name="Concatenacao")([saida, vol])
-        super(RedeAerofolio,self).__init__(entrada, saida_completa, **kwargs)
+        # saida_completa=keras.layers.Concatenate(axis=-1, name="Concatenacao")([saida, vol])
+        super(RedeAerofolio,self).__init__(entrada, saida, **kwargs)
     def get_config(self):
         base_config=super().get_config()
         return base_config
@@ -254,6 +254,24 @@ def plotar_saida_arquitetura(path_resultados, plot="arquitetura"):
         plt.savefig(os.path.join("Saida","Redes Neurais","Mapa de calor Tempo.png"), dpi=300, bbox_inches="tight", transparent=True)
     return
 
+def plotar_saida_lambda(path_resultados):
+    resultados=pd.read_csv(path_resultados, sep=";", skipinitialspace=True)
+    with plt.rc_context({"text.usetex":True}):
+        fig, eixo=plt.subplots()
+        eixo.set_xlabel(r"Parâmetro de regularização $\lambda$")
+        eixo.set_ylabel(u"Erro Quadrático Médio")
+        # eixo.yaxis.set_major_formatter(mtick.FuncFormatter(lambda x, pos: f"$10^{{{int(x)}}}$"))
+        # eixo.yaxis.set_major_locator(mtick.MaxNLocator(integer=True))
+        # eixo.scatter(resultados["lambda"].array, np.log10(resultados["EQM"].array))
+        eixo.loglog(resultados["lambda"].array, resultados["EQM"].array, marker="o", linestyle="none")
+        plt.savefig(os.path.join("Saida","Redes Neurais","Lambda erro.png"), dpi=300, bbox_inches="tight", transparent=True)
+        fig2, eixo2=plt.subplots()
+        eixo2.set_xlabel(r"Parâmetro de regularização $\lambda$")
+        eixo2.set_ylabel("Tempo [s]")
+        # eixo2.scatter(resultados["lambda"].array, resultados["tempo"].array)
+        eixo2.semilogx(resultados["lambda"].array, resultados["tempo"].array, marker="o", linestyle="none")
+        plt.savefig(os.path.join("Saida","Redes Neurais","Lambda tempo.png"), dpi=300, bbox_inches="tight", transparent=True)
+    return
 
 if __name__=="__main__":
     # modelo1, avaliacao1=treinar_rede( 0.001, 0.95, 0.01,1,50)
@@ -280,6 +298,7 @@ if __name__=="__main__":
     # modelo,avaliacao,tempo=treinar_rede(0.001, 0.95, 1E-5, 1, 10)
     # modelo2,avaliacao2,tempo2=carregar_rede(0.001, 0.95, 1E-5, 1, 10)
     # plotar_saida_arquitetura(os.path.join("Saida", "Redes Neurais", "Comparacao", "Comparacao arquitetura.csv"))
+    plotar_saida_lambda(os.path.join("Saida", "Redes Neurais", "Comparacao", "Comparacao lambda.csv"))
     plotar_saida_arquitetura(os.path.join("Saida", "Redes Neurais", "Comparacao", "Comparacao aprendizado.csv"), plot="aprendizado")
     plt.show(block=False)
     ##Arquitetura: 8x40

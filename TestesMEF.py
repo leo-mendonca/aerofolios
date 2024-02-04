@@ -502,7 +502,7 @@ def teste_aerofolio(aerofolio, Re, n=100, h=1.0, dt=0.05, folga=6, T=50, formula
         eixo3.add_collection(colecao)
     plt.savefig(os.path.join(nome_diretorio, "geometria.png"), dpi=300, bbox_inches="tight")
     c_d, c_l, c_M = ElementosFinitos.coeficientes_aerodinamicos(Problema, u, p, Re, x_centro=aerofolio.centro_aerodinamico)
-    return
+    return c_l,c_d,c_M
 
 
 def validacao_parametros_af(parametro, valores_parametro, n=100, Re=1, dt=0.01, T=30, h=0.5, folga=10, formulacao="F", aerofolio=AerofolioFino.NACA4412, resolucao=0.05, executa=True, plota=True) :
