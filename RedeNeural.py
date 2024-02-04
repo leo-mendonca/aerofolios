@@ -2,6 +2,7 @@
 import time
 
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import tensorflow as tf
 import keras
@@ -282,10 +283,13 @@ if __name__=="__main__":
     plotar_saida_arquitetura(os.path.join("Saida", "Redes Neurais", "Comparacao", "Comparacao aprendizado.csv"), plot="aprendizado")
     plt.show(block=False)
     ##Arquitetura: 8x40
-    k = [0.95,]
-    eta = [0.001,]
+    # k = [0.95,]
+    k=np.linspace(0.70,0.98,15)
+    # eta = [0.001,]
+    eta=np.logspace(-5,-2,10)
     # lamda = [1E-5,]
-    lamda=np.logspace(-6,-1,26)
+    # lamda=np.logspace(-7,-1,31)
+    lamda=[4E-7,]
     # camadas = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     # neuronios = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
     camadas=[8,]
