@@ -61,10 +61,13 @@ def scheduler(epoch, lr, k=0.95):
     else:
         return lr * k
 
-def carrega_dados(path):
+def carrega_dados(path, usa_volume=False):
     '''Le um arquivo .csv contendo os resultados do MEF e retorna os conjuntos de treino, teste e validacao como tensores tf'''
     dados_dframe=pd.read_csv(path, sep=";", skipinitialspace=True)
     dados_dframe = Salvamento.filtragem_outliers(dados_dframe)
+    if not usa_volume:
+        try: dados_dframe.drop(columns=["V"], inplace=True)
+        except KeyError: pass
     dados = np.array(dados_dframe)
     x = tf.cast(dados[:, :5], dtype=dtype_geral)
     y = tf.cast(dados[:, 5:], dtype=dtype_geral)
@@ -107,7 +110,7 @@ def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios, path_dados=os.pat
     keras.utils.plot_model(modelo, to_file=os.path.join(path_saida, "RedeAerofolio.png"), show_shapes=True, show_layer_names=True, show_layer_activations=True, show_trainable=True, dpi=300)
     callback_taxa = keras.callbacks.LearningRateScheduler(lambda *args: scheduler(*args, k=decaimento))
     callback_log = keras.callbacks.CSVLogger(os.path.join(path_saida, "Log.csv"))
-    callback_parada = keras.callbacks.EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True, min_delta=1E-4)
+    callback_parada = keras.callbacks.EarlyStopping(monitor="val_loss", patience=10, restore_best_weights=True, min_delta=1E-4)
     t0=time.process_time()
     modelo.fit(x, y, validation_data=(x_val, y_val), batch_size=64, epochs=100, callbacks=[callback_taxa, callback_log, callback_parada], shuffle=True)
     t1=time.process_time()
@@ -275,6 +278,12 @@ def plotar_saida_lambda(path_resultados):
     return
 
 if __name__=="__main__":
+    modelo,avaliacao,tempo=treinar_rede(4.6E-3,0.96,2.5E-6,4,80)
+    print(avaliacao)
+    print(f"tempo= {tempo} s")
+    colunas=["perda", "cosseno", "EQM", "EQM_D", "EQM_L", "EQM_M"]
+    [print(f"{coluna}: {avaliacao[i]}") for i,coluna in enumerate(colunas)]
+    raise SystemExit
     # modelo1, avaliacao1=treinar_rede( 0.001, 0.95, 0.01,1,50)
     # modelo2, avaliacao2=treinar_rede( 0.001, 0.95, 0.01,2,50)
     # modelo3, avaliacao3=treinar_rede( 0.001, 0.95, 0.01,3,50)
@@ -307,13 +316,13 @@ if __name__=="__main__":
     k=np.linspace(0.70,0.98,15)
     # eta = [0.001,]
     eta=np.logspace(-5,-2,10)
-    # lamda = [1E-5,]
+    lamda = [2.5E-6,]
     # lamda=np.logspace(-7,-1,31)
-    lamda=[4E-7,]
+    # lamda=[4E-7,]
     # camadas = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     # neuronios = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
-    camadas=[8,]
-    neuronios=[40,]
+    camadas=[4,]
+    neuronios=[80,]
     resultados=analisa_hiperparametros(eta, k, lamda, camadas, neuronios, executa=True)
 
 
@@ -337,7 +346,7 @@ if __name__=="__main__":
 
 
 
-    plt.show(block=False)
-    plt.show(block=True)
+    # plt.show(block=False)
+    # plt.show(block=True)
 
 
