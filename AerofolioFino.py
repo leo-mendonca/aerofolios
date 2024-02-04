@@ -182,14 +182,11 @@ class AerofolioFinoNACA4(AerofolioFino) :
 
     def calcula_coef_vorticidade(self, n) :
         if n == 0 :
-            integral = self.alfa / np.pi * self.const_m * (
-                        (2 * self.const_p - 1) * self.theta_p * self.beta + (2 * self.const_p - 1) / (1 - self.const_p) ** 2 * np.pi + np.sin(self.theta_p) * self.beta)
+            integral = self.alfa- 2*self.const_m/np.pi*((self.const_p-1/2)*(np.pi+self.beta*self.theta_p) + 1/2*self.beta*np.sin(self.theta_p))
         elif n == 1 :
-            integral = self.const_m / np.pi * (
-                        self.beta * ((2 * self.const_p - 1) * np.sin(self.theta_p) + np.sin(2 * self.theta_p) / 4 + self.theta_p / 2) + np.pi / 2 / (1 - self.const_p) ** 2)
+            integral=self.const_m/np.pi*(4*self.beta*(self.const_p-1/2)*np.sin(self.theta_p)+self.beta*(np.sin(2*self.theta_p)/2+self.theta_p)+np.pi/(1-self.const_p)**2)
         elif n > 1 :
-            integral = self.const_m * self.beta / np.pi * ((2 * self.const_p - 1) / n * np.sin(n * self.theta_p) + (
-                        np.sin(self.theta_p) * np.cos(n * self.theta_p) - n * np.cos(self.theta_p) * np.sin(n * self.theta_p)) / (1 - n))
+            integral=4/(np.pi)*self.const_m*self.beta*((self.const_p-1/2)*np.sin(n*self.theta_p)/n +1/2/(1-n**2)*(np.sin(self.theta_p)*np.cos(n*self.theta_p)-n*np.sin(n*self.theta_p)*np.cos(self.theta_p)))
         else :
             raise ValueError("n deve ser inteiro e maior ou igual a zero")
         return integral
@@ -228,6 +225,11 @@ NACA4412_10= AerofolioFinoNACA4([0.04, 0.4, 0.12], -10*np.pi/180, 1)
 if __name__ == "__main__" :
     plt.rcParams["axes.grid"] = True
     af=AerofolioFinoNACA4([0.07,0.30,0.11], 0, 1)
+    coefs=np.zeros((501,3),dtype=np.float64)
+    for i, alfa in enumerate(np.linspace(-1, 1, 501)) :
+        af = AerofolioFinoNACA4([0., 0.01, 0.12], alfa, 1)
+        coefs[i] = af.c_D, af.c_L, af.c_M
+
     af.desenhar()
     plt.savefig(os.path.join("Saida","Aerofolio Fino NACA4","Figuras","NACA7311.png"), dpi=300, bbox_inches="tight")
 
