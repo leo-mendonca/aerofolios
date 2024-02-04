@@ -123,7 +123,7 @@ def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios, path_dados=os.pat
     plt.scatter(ymed[:,1],ypred[:,1], label="c_L",s=5)
     plt.scatter(ymed[:, 2], ypred[:, 2], label="c_M",s=5)
     plt.legend()
-    plt.savefig(os.path.join(path_saida,"Desempenho da rede - Aerofolio fino.png"), dpi=300)
+    plt.savefig(os.path.join(path_saida,"Desempenho da rede"), dpi=300)
     return modelo, avaliacao, tempo
 
 @keras.saving.register_keras_serializable()
@@ -184,56 +184,73 @@ def analisa_hiperparametros(valores_eta, valores_k, valores_lambda, camadas, neu
     print(resultados)
     return resultados
 
-def plotar_saida_arquitetura(path_resultados):
+def plotar_saida_arquitetura(path_resultados, plot="arquitetura"):
     '''plota os resultados da analise de arquitetura. Avalia o erro e o tempo computacional em funcao do numero de neuronios e camadas'''
     resultados=pd.read_csv(path_resultados, sep=";", skipinitialspace=True)
-    camadas=resultados["camadas"]
-    neuronios=resultados["neuronios"]
+    if plot=="arquitetura":
+        grandeza1=resultados["camadas"]
+        grandeza2=resultados["neuronios"]
+        label1=u"Camadas"
+        label2=u"Neurônios"
+    elif plot=="aprendizado":
+        grandeza1=resultados["eta"]
+        grandeza2=resultados["k"]
+        label1=r"Taxa de aprendizado inicial $\eta_0$"
+        label2=r"Taxa de decaimento $\gamma$"
     e=resultados["EQM"]
     tempo=resultados["tempo"]
     e_log=np.log10(e)
     t_log=np.log10(tempo)
-    fig1=plt.figure()
-    eixo1=fig1.add_subplot(projection="3d")
-    log_locator=lambda x, pos=None: f"$10^{{{int(x)}}}$"
-    eixo1.zaxis.set_major_formatter(mtick.FuncFormatter(log_locator))
-    eixo1.zaxis.set_major_locator(mtick.MaxNLocator(integer=True))
-    eixo1.plot_trisurf(camadas, neuronios, e_log)
-    eixo1.set_xlabel("Camadas")
-    eixo1.set_ylabel("Neuronios")
-    eixo1.set_zlabel("EQM")
+    with plt.rc_context({"text.usetex":True}):
+        fig1=plt.figure()
+        eixo1=fig1.add_subplot(projection="3d")
+        log_locator=lambda x, pos=None: f"$10^{{{int(x)}}}$"
+        eixo1.zaxis.set_major_formatter(mtick.FuncFormatter(log_locator))
+        eixo1.zaxis.set_major_locator(mtick.MaxNLocator(integer=True))
+        eixo1.plot_trisurf(grandeza1, grandeza2, e_log)
+        eixo1.set_xlabel(label1)
+        eixo1.set_ylabel(label2)
+        eixo1.set_zlabel(u"Erro Quadrático Médio")
 
-    fig2=plt.figure()
-    eixo2=fig2.add_subplot(projection="3d")
-    eixo2.plot_trisurf(camadas, neuronios, tempo)
-    eixo2.set_xlabel("Camadas")
-    eixo2.set_ylabel("Neuronios")
-    eixo2.set_zlabel("Tempo [s]")
+        fig2=plt.figure()
+        eixo2=fig2.add_subplot(projection="3d")
+        eixo2.plot_trisurf(grandeza1, grandeza2, tempo)
+        eixo2.set_xlabel(label1)
+        eixo2.set_ylabel(label2)
+        eixo2.set_zlabel("Tempo [s]")
 
-    ##Faz um plot heatmap das mesmas grandezas acima
-    fig3, eixo3=plt.subplots()
-    fig3.set_size_inches(6,4)
-    eixo3.grid(False)
-    eixo3.set_xlabel("Camadas")
-    eixo3.set_ylabel("Neuronios")
-    eixo3.set_title("EQM")
-    x_grid, y_grid=np.meshgrid(camadas.unique(), neuronios.unique())
-    e_grid=np.array([[resultados.loc[np.logical_and(resultados["camadas"]==x, resultados["neuronios"]==y),"EQM"].values[0]  for y in neuronios.unique()]for x in camadas.unique()])
-    mapa_erro=eixo3.pcolormesh(x_grid, y_grid, e_grid, cmap="turbo", norm=mcolors.LogNorm())
-    # eixo3.imshow(e.values.reshape(len(camadas.unique()), len(neuronios.unique())), cmap="turbo", origin="lower", norm=mcolors.LogNorm())
-    fig3.colorbar(mapa_erro)
-    plt.savefig(os.path.join("Saida","Redes Neurais","Mapa de calor EQM.png"), dpi=300, bbox_inches="tight", transparent=True)
-    fig4, eixo4=plt.subplots()
-    eixo4.grid(False)
-    fig4.set_size_inches(6,4)
-    eixo4.set_xlabel("Camadas")
-    eixo4.set_ylabel("Neuronios")
-    eixo4.set_title("Tempo [s]")
-    t_grid=np.array([[resultados.loc[np.logical_and(resultados["camadas"]==x, resultados["neuronios"]==y),"tempo"].values[0]  for y in neuronios.unique()]for x in camadas.unique()])
-    mapa_tempo=eixo4.pcolormesh(x_grid, y_grid, t_grid, cmap="turbo")
-    # eixo4.imshow(tempo.values.reshape(len(camadas.unique()), len(neuronios.unique())), cmap="turbo", origin="lower")
-    fig4.colorbar(mapa_tempo)
-    plt.savefig(os.path.join("Saida","Redes Neurais","Mapa de calor Tempo.png"), dpi=300, bbox_inches="tight", transparent=True)
+        ##Faz um plot heatmap das mesmas grandezas acima
+        fig3, eixo3=plt.subplots()
+        fig3.set_size_inches(6,4)
+        eixo3.grid(False)
+        eixo3.set_xlabel(label1)
+        eixo3.set_ylabel(label2)
+        eixo3.set_title(u"Erro Quadrático Médio")
+        if plot=="arquitetura":
+            x_grid, y_grid=np.meshgrid(grandeza1.unique(), grandeza2.unique())
+        elif plot=="aprendizado":
+            x_grid, y_grid=np.meshgrid(np.log10(grandeza1.unique()), grandeza2.unique())
+        e_grid=np.array([[resultados.loc[np.logical_and(grandeza1==y, grandeza2==x),"EQM"].values[0]  for y in grandeza1.unique()]for x in grandeza2.unique()])
+        mapa_erro=eixo3.pcolormesh(x_grid, y_grid, e_grid, cmap="turbo", norm=mcolors.LogNorm(), shading="nearest")
+        eixo3.xaxis.set_major_formatter(mtick.FuncFormatter(log_locator))
+        eixo3.xaxis.set_major_locator(mtick.MaxNLocator(integer=True))
+        # eixo3.imshow(e.values.reshape(len(camadas.unique()), len(neuronios.unique())), cmap="turbo", origin="lower", norm=mcolors.LogNorm())
+        fig3.colorbar(mapa_erro)
+        plt.savefig(os.path.join("Saida","Redes Neurais","Mapa de calor EQM.png"), dpi=300, bbox_inches="tight", transparent=True)
+        fig4, eixo4=plt.subplots()
+        eixo4.grid(False)
+        fig4.set_size_inches(6,4)
+        eixo4.set_xlabel(label1)
+        eixo4.set_ylabel(label2)
+        eixo4.set_title("Tempo [s]")
+
+        t_grid=np.array([[resultados.loc[np.logical_and(grandeza1==y, grandeza2==x),"tempo"].values[0]  for y in grandeza1.unique()]for x in grandeza2.unique()])
+        mapa_tempo=eixo4.pcolormesh(x_grid, y_grid, t_grid, cmap="turbo", shading="nearest")
+        eixo4.xaxis.set_major_formatter(mtick.FuncFormatter(log_locator))
+        eixo4.xaxis.set_major_locator(mtick.MaxNLocator(integer=True))
+        # eixo4.imshow(tempo.values.reshape(len(camadas.unique()), len(neuronios.unique())), cmap="turbo", origin="lower")
+        fig4.colorbar(mapa_tempo)
+        plt.savefig(os.path.join("Saida","Redes Neurais","Mapa de calor Tempo.png"), dpi=300, bbox_inches="tight", transparent=True)
     return
 
 
@@ -261,7 +278,9 @@ if __name__=="__main__":
     # print(resultados)
     # modelo,avaliacao,tempo=treinar_rede(0.001, 0.95, 1E-5, 1, 10)
     # modelo2,avaliacao2,tempo2=carregar_rede(0.001, 0.95, 1E-5, 1, 10)
-    # plotar_saida_arquitetura(os.path.join("Saida", "Redes Neurais", "Comparacao hiperparametros.csv"))
+    # plotar_saida_arquitetura(os.path.join("Saida", "Redes Neurais", "Comparacao", "Comparacao arquitetura.csv"))
+    plotar_saida_arquitetura(os.path.join("Saida", "Redes Neurais", "Comparacao", "Comparacao aprendizado.csv"), plot="aprendizado")
+    plt.show(block=False)
     ##Arquitetura: 8x40
     k = [0.95,]
     eta = [0.001,]
