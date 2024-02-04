@@ -425,7 +425,7 @@ def compara_cavidade_ref(h, dt, T, formulacao="A", plota=True) :
     return dframe_erros
 
 
-def teste_aerofolio(aerofolio, Re, n=100, h=1.0, dt=0.05, folga=6, T=50, formulacao="F", executa=True, plota_tudo=False) :
+def teste_aerofolio(aerofolio, Re, n=100, h=1.0, dt=0.05, folga=6, T=50, formulacao="F", executa=True, plota_tudo=False, desenha_aerofolio=True) :
     '''Modela o escoamento em torno de um aerofolio e gera figuras correspondentes'''
     nome_diretorio = os.path.join("Saida", "Aerofolio", f"{aerofolio.nome} h={h} dt={dt} T={T} n={n} folga={folga} {formulacao}")
     if executa :
@@ -472,35 +472,36 @@ def teste_aerofolio(aerofolio, Re, n=100, h=1.0, dt=0.05, folga=6, T=50, formula
         correntes = RepresentacaoEscoamento.linhas_de_corrente(Problema, u, pontos_iniciais=iniciais, resolucao=resolucao, eixo=eixo2)
         correntes_inversas = RepresentacaoEscoamento.linhas_de_corrente(Problema, -u, pontos_iniciais=iniciais, resolucao=resolucao, eixo=eixo2)
         plt.savefig(os.path.join(nome_diretorio, "Correntes.png"), dpi=300, bbox_inches="tight")
-    ##plotando o mapa vazio:
-    fig, eixo1 = plt.subplots()
-    eixo1.set_ylim(Problema.y_min, Problema.y_max)
-    eixo1.set_xlim(Problema.x_min, Problema.x_max)
-    eixo1.set_aspect("equal")
-    aerofolio.desenhar(eixo1)
-    plt.savefig(os.path.join(nome_diretorio, "Aerofolio.png"), dpi=300, bbox_inches="tight")
-    ##plotando a malha
-    fig2, eixo2 = plt.subplots()
-    eixo2.set_ylim(Problema.y_min, Problema.y_max)
-    eixo2.set_xlim(Problema.x_min, Problema.x_max)
-    eixo2.set_aspect("equal")
-    eixo2.grid(False)
-    x, y, z = Problema.x_nos.T
-    elementos = Problema.elementos_o1
-    eixo2.triplot(x, y, elementos, color="k", linewidth=0.5, alpha=0.5)
-    plt.savefig(os.path.join(nome_diretorio, "Malha.png"), dpi=300, bbox_inches="tight")
-    ##Plotando apenas os contornos
-    fig3, eixo3 = plt.subplots()
-    eixo3.set_ylim(Problema.y_min, Problema.y_max)
-    eixo3.set_xlim(Problema.x_min, Problema.x_max)
-    eixo3.set_aspect("equal")
-    x, y, z = Problema.x_nos.T
-    arestas = Problema.arestas_cont_o1
-    for cont in arestas.keys() :
-        linhas = Problema.x_nos[arestas[cont]][:, :, :2]
-        colecao = mcollections.LineCollection(linhas, color="k", linewidth=1, alpha=1.0)
-        eixo3.add_collection(colecao)
-    plt.savefig(os.path.join(nome_diretorio, "geometria.png"), dpi=300, bbox_inches="tight")
+    if desenha_aerofolio:
+        ##plotando o mapa vazio:
+        fig, eixo1 = plt.subplots()
+        eixo1.set_ylim(Problema.y_min, Problema.y_max)
+        eixo1.set_xlim(Problema.x_min, Problema.x_max)
+        eixo1.set_aspect("equal")
+        aerofolio.desenhar(eixo1)
+        plt.savefig(os.path.join(nome_diretorio, "Aerofolio.png"), dpi=300, bbox_inches="tight")
+        ##plotando a malha
+        fig2, eixo2 = plt.subplots()
+        eixo2.set_ylim(Problema.y_min, Problema.y_max)
+        eixo2.set_xlim(Problema.x_min, Problema.x_max)
+        eixo2.set_aspect("equal")
+        eixo2.grid(False)
+        x, y, z = Problema.x_nos.T
+        elementos = Problema.elementos_o1
+        eixo2.triplot(x, y, elementos, color="k", linewidth=0.5, alpha=0.5)
+        plt.savefig(os.path.join(nome_diretorio, "Malha.png"), dpi=300, bbox_inches="tight")
+        ##Plotando apenas os contornos
+        fig3, eixo3 = plt.subplots()
+        eixo3.set_ylim(Problema.y_min, Problema.y_max)
+        eixo3.set_xlim(Problema.x_min, Problema.x_max)
+        eixo3.set_aspect("equal")
+        x, y, z = Problema.x_nos.T
+        arestas = Problema.arestas_cont_o1
+        for cont in arestas.keys() :
+            linhas = Problema.x_nos[arestas[cont]][:, :, :2]
+            colecao = mcollections.LineCollection(linhas, color="k", linewidth=1, alpha=1.0)
+            eixo3.add_collection(colecao)
+        plt.savefig(os.path.join(nome_diretorio, "geometria.png"), dpi=300, bbox_inches="tight")
     c_d, c_l, c_M = ElementosFinitos.coeficientes_aerodinamicos(Problema, u, p, Re, x_centro=aerofolio.centro_aerodinamico)
     return c_l,c_d,c_M
 

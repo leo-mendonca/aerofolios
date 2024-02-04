@@ -155,7 +155,8 @@ def carregar_rede(eta, k, lamda, camadas, neuronios, path_dados=os.path.join("En
     '''Carrega os pesos e os resultados de uma rede neural ja devidamente treinada e analisa o desempenho dessa rede nos dados de validacao'''
     nome_caso=f"Rede eta={eta} k={k} lambda={lamda} camadas={camadas}x{neuronios}"
     path_saida = os.path.join("Saida", "Redes Neurais", nome_caso)
-    modelo = keras.models.load_model(os.path.join(path_saida, "Modelo.keras"), custom_objects={"CalculaVolume":CalculaVolume})
+    try: modelo = keras.models.load_model(os.path.join(path_saida, "Modelo.keras"), custom_objects={"CalculaVolume":CalculaVolume})
+    except: modelo = keras.models.load_model(os.path.join(path_saida, "Modelo.keras"))
     x, y, x_val, y_val, x_teste, y_teste = carrega_dados(path_dados)
     avaliacao = modelo.evaluate(x_val, y_val)
     with open(os.path.join(path_saida, "Tempo.txt"), "r") as arquivo:
