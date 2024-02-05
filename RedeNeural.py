@@ -95,7 +95,7 @@ def plota_log(path):
     plt.ylabel("Taxa de aprendizado")
     return log
 
-def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios, path_dados=os.path.join("Entrada", "Dados", "dados_mef_v2.csv")):
+def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios, path_dados=os.path.join("Entrada", "Dados", "dados_mef_v2.csv"), paciencia=5):
     '''Treina uma rede neural com os parametros fornecidos e salva os resultados em uma pasta'''
     nome_caso=f"Rede eta={eta} k={decaimento} lambda={lamda} camadas={n_camadas}x{neuronios}"
     nome_modelo="Rede"
@@ -107,10 +107,11 @@ def treinar_rede(eta, decaimento, lamda, n_camadas, neuronios, path_dados=os.pat
     metricas = [keras.metrics.CosineSimilarity(name="Cosseno"), keras.metrics.MeanSquaredError(name="EQM"), MetricaEQMComponente(0, name="EQM_D"), MetricaEQMComponente(1, name="EQM_L"), MetricaEQMComponente(2, name="EQM_M")]
     modelo.compile(optimizer=otimizador, loss=keras.losses.MeanSquaredError(name="MSE"), metrics=metricas)
     # modelo.summary()
-    keras.utils.plot_model(modelo, to_file=os.path.join(path_saida, "RedeAerofolio.png"), show_shapes=True, show_layer_names=True, show_layer_activations=True, show_trainable=True, dpi=300)
+    try: keras.utils.plot_model(modelo, to_file=os.path.join(path_saida, "RedeAerofolio.png"), show_shapes=True, show_layer_names=True, show_layer_activations=True, show_trainable=True, dpi=300)
+    except: pass
     callback_taxa = keras.callbacks.LearningRateScheduler(lambda *args: scheduler(*args, k=decaimento))
     callback_log = keras.callbacks.CSVLogger(os.path.join(path_saida, "Log.csv"))
-    callback_parada = keras.callbacks.EarlyStopping(monitor="val_loss", patience=10, restore_best_weights=True, min_delta=1E-4)
+    callback_parada = keras.callbacks.EarlyStopping(monitor="val_loss", patience=paciencia, restore_best_weights=True, min_delta=1E-4)
     t0=time.process_time()
     modelo.fit(x, y, validation_data=(x_val, y_val), batch_size=64, epochs=100, callbacks=[callback_taxa, callback_log, callback_parada], shuffle=True)
     t1=time.process_time()
@@ -278,7 +279,7 @@ def plotar_saida_lambda(path_resultados):
     return
 
 if __name__=="__main__":
-    modelo,avaliacao,tempo=treinar_rede(4.6E-3,0.96,2.5E-6,4,80)
+    modelo,avaliacao,tempo=treinar_rede(4.6E-3,0.96,2.5E-6,4,80, paciencia=10, path_dados=os.path.join("Entrada","Dados","dados_mef_alfa_corrigido.csv"))
     print(avaliacao)
     print(f"tempo= {tempo} s")
     colunas=["perda", "cosseno", "EQM", "EQM_D", "EQM_L", "EQM_M"]

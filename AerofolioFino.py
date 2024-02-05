@@ -17,24 +17,25 @@ class AerofolioFino(Aerofolio) :
         '''
         self.vetor_coeficientes = vetor_coeficientes
         self.U0 = U0
-        self.alfa = alfa
+        self.angulo = -alfa ##O angulo de ataque eh negativo para um escoamento de cima para baixo
+        self.alfa=alfa
         A0, A1, A2 = self.calcula_coef_vorticidade(0), self.calcula_coef_vorticidade(1), self.calcula_coef_vorticidade(2)
         self.c_L = 2 * np.pi * (A0 + A1 / 2)
         self.c_M = -np.pi / 2 * (A0 + A1 - A2 / 2)
         self.c_D = 0
         self.nome = "Aerofolio-" + "-".join([str(i) for i in vetor_coeficientes])
         ###Ponto de quarto de corda em torno do qual o momento eh calculado:
-        self.x_o=1/4*np.cos(self.alfa)
-        self.y_o=1/4*np.sin(self.alfa)
+        self.x_o=1/4*np.cos(self.angulo)
+        self.y_o=1/4*np.sin(self.angulo)
         self.centro_aerodinamico=np.array((0.25,self.y_camber(0.25)))
 
     def x_med(self, eta) :
         '''Posicao horizontal da linha media do aerofolio na posicao eta (eta varia de 0 a 1 e faz as vezes de x quando o aerofolio esta horizontal)'''
-        return eta * np.cos(self.alfa) - self.y_camber(eta) * np.sin(self.alfa)
+        return eta * np.cos(self.angulo) - self.y_camber(eta) * np.sin(self.angulo)
 
     def y_med(self, eta) :
         '''Posicao vertical da linha media do aerofolio na posicao eta (eta varia de 0 a 1)'''
-        return eta * np.sin(self.alfa) + self.y_camber(eta) * np.cos(self.alfa)
+        return eta * np.sin(self.angulo) + self.y_camber(eta) * np.cos(self.angulo)
 
     def y_camber(self, x) :
         '''Camber, em funcao de x, do aerofolio'''
@@ -58,18 +59,18 @@ class AerofolioFino(Aerofolio) :
 
     def y_sup(self, x) :
         '''Linha superior do aerofolio, considerando o angulo de inclinacao alfa'''
-        return self.x_sup_0(x) * np.sin(self.alfa) + self.y_sup_0(x) * np.cos(self.alfa)
+        return self.x_sup_0(x) * np.sin(self.angulo) + self.y_sup_0(x) * np.cos(self.angulo)
 
     def y_inf(self, x) :
         '''Linha inferior do aerofolio, considerando o angulo de inclinacao alfa'''
-        return self.x_inf_0(x) * np.sin(self.alfa) + self.y_inf_0(x) * np.cos(self.alfa)
+        return self.x_inf_0(x) * np.sin(self.angulo) + self.y_inf_0(x) * np.cos(self.angulo)
 
     def x_sup(self, x) :
         '''Posicao horizontal da lina superior do aerofolio, considerando o angulo de inclinacao alfa'''
-        return self.x_sup_0(x) * np.cos(self.alfa) - self.y_sup_0(x) * np.sin(self.alfa)
+        return self.x_sup_0(x) * np.cos(self.angulo) - self.y_sup_0(x) * np.sin(self.angulo)
 
     def x_inf(self, x) :
-        return self.x_inf_0(x) * np.cos(self.alfa) - self.y_inf_0(x) * np.sin(self.alfa)
+        return self.x_inf_0(x) * np.cos(self.angulo) - self.y_inf_0(x) * np.sin(self.angulo)
 
     def angulo_sup(self, x) :
         '''Angulo, em rad, da linha superior do aerofolio na posicao x'''
@@ -150,7 +151,7 @@ class AerofolioFinoNACA4(AerofolioFino) :
         self.volume = 0.6851 * self.const_t  ##Integral de x*espessura(x) entre 0 e 1 (aproximacao!)
         self.nome = f"NACA-{(self.const_m * 100):.2f}-{(self.const_p * 10):.2f}-{(self.const_t * 100):.2f}-{int(alfa_grau)}°"
 
-    ##TODO validar topologia zoada com autointersecao do contorno inferior quando p eh muito pequena ou t eh muito grande
+    ##TODO validar topologia problematica com autointersecao do contorno inferior quando p eh muito pequena ou t eh muito grande
 
     def y_camber(self, x) :
         y = (self.const_m / self.const_p ** 2 * (2 * self.const_p * x - x ** 2)) * (x < self.const_p) + (
@@ -224,14 +225,9 @@ NACA4412_10= AerofolioFinoNACA4([0.04, 0.4, 0.12], -10*np.pi/180, 1)
 
 if __name__ == "__main__" :
     plt.rcParams["axes.grid"] = True
-    af=AerofolioFinoNACA4([0.07,0.30,0.11], 0, 1)
-    coefs=np.zeros((501,3),dtype=np.float64)
-    for i, alfa in enumerate(np.linspace(-1, 1, 501)) :
-        af = AerofolioFinoNACA4([0., 0.01, 0.12], alfa, 1)
-        coefs[i] = af.c_D, af.c_L, af.c_M
-
+    af=AerofolioFinoNACA4([0.04,0.40,0.12], 0, 100)
     af.desenhar()
-    plt.savefig(os.path.join("Saida","Aerofolio Fino NACA4","Figuras","NACA7311.png"), dpi=300, bbox_inches="tight")
+    plt.savefig(os.path.join("Saida","Aerofolio Fino NACA4","Figuras","NACA4412.png"), dpi=300, bbox_inches="tight")
 
 
 

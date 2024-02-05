@@ -831,6 +831,8 @@ def validacao_tempo_convergencia(Re=1, n=100, dt=0.05, h=1.0, folga=6, T_max=100
 
 if __name__ == "__main__" :
     ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
+    af=AerofolioFino.AerofolioFinoNACA4([.04,.4,.12],0,100)
+    teste_aerofolio(af, n=100, h=1.0, folga=6, T=50, dt=0.05, Re=100, formulacao="F", executa=True, plota_tudo=True)
     for i, alfa in enumerate(np.arange(-15,16,1)*np.pi/180):
         af=AerofolioFino.AerofolioFinoNACA4([.04,.4,.12],alfa,100)
         teste_aerofolio(af, n=100, h=1.0, folga=6, T=50, dt=0.05, Re=100, formulacao="F", executa=True)

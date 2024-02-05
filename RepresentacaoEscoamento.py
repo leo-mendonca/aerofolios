@@ -245,5 +245,5 @@ def desenhar_aerofolio_svg(aerofolio, path_salvar):
 
 if __name__=="__main__":
     from AerofolioFino import AerofolioFinoNACA4
-    af=AerofolioFinoNACA4((0.09, 0.50, 0.05), 0, 0)
+    af=AerofolioFinoNACA4((0.04, 0.40, 0.12), 15*np.pi/180, 100)
     desenhar_aerofolio_svg(af, os.path.join("Saida","Aerofolio Fino NACA4", "Figuras", af.nome + ".svg"))
