@@ -1,3 +1,5 @@
+import numpy as np
+
 from Definicoes import *
 import Execucao
 import RedeNeural
@@ -35,7 +37,7 @@ def compara_metodos(m,p,t,Re, picles=False):
     with plt.rc_context({"text.usetex" : True}):
         fig,eixo=plt.subplots()
         fig.set_size_inches(4,2.5)
-        eixo.plot(alfas*180/np.pi, saidas_rede[:,0], label="Rede Neural")
+        eixo.plot(alfas*180/np.pi, saidas_rede[:,0], label="Rede Neural", zorder=10)
         eixo.plot(alfas*180/np.pi, saidas_af[:,0], label="Aerofolio Fino")
         eixo.plot(alfas_mef*180/np.pi, saidas_mef[:,0], label="Elementos Finitos", marker="*", linestyle="none")
         eixo.set_xlabel(r"$\alpha \ [ ^\circ ]$")
@@ -44,7 +46,7 @@ def compara_metodos(m,p,t,Re, picles=False):
         plt.savefig(os.path.join(path_saida,"Comparacao_CL.png"),bbox_inches="tight",dpi=300)
         fig2,eixo2=plt.subplots()
         fig2.set_size_inches(4,2.5)
-        eixo2.plot(alfas*180/np.pi, saidas_rede[:,1], label="Rede Neural")
+        eixo2.plot(alfas*180/np.pi, saidas_rede[:,1], label="Rede Neural", zorder=10)
         eixo2.plot(alfas*180/np.pi, saidas_af[:,1], label="Aerofolio Fino")
         eixo2.plot(alfas_mef*180/np.pi, saidas_mef[:,1], label="Elementos Finitos", marker="*", linestyle="none")
         eixo2.set_xlabel(r"$\alpha \ [ ^\circ ]$")
@@ -53,7 +55,7 @@ def compara_metodos(m,p,t,Re, picles=False):
         plt.savefig(os.path.join(path_saida,"Comparacao_CD.png"),bbox_inches="tight",dpi=300)
         fig3,eixo3=plt.subplots()
         fig3.set_size_inches(4,2.5)
-        eixo3.plot(alfas*180/np.pi, saidas_rede[:,2], label="Rede Neural")
+        eixo3.plot(alfas*180/np.pi, saidas_rede[:,2], label="Rede Neural", zorder=10)
         eixo3.plot(alfas*180/np.pi, saidas_af[:,2], label="Aerofolio Fino")
         eixo3.plot(alfas_mef*180/np.pi, saidas_mef[:,2], label="Elementos Finitos", marker="*", linestyle="none")
         eixo3.set_xlabel(r"$\alpha \ [ ^\circ ]$")
@@ -61,6 +63,43 @@ def compara_metodos(m,p,t,Re, picles=False):
         eixo3.legend()
         plt.savefig(os.path.join(path_saida,"Comparacao_CM.png"),bbox_inches="tight",dpi=300)
 
+def avalia_dados_teste():
+    '''Avalia os dados de teste da rede neural.'''
+    modelo=keras.models.load_model(os.path.join("Entrada","Rede neural","Modelo.keras"))
+    x, y, x_val, y_val, x_teste, y_teste = RedeNeural.carrega_dados(os.path.join("Entrada","Dados","dados_mef_alfa_corrigido.csv"))
+    entradas=x_teste
+    saidas=y_teste
+    t0=time.process_time()
+    saidas_rede=modelo(entradas)
+    t1=time.process_time()
+    erros=saidas_rede-saidas
+    print("Erro maximo:", np.max(np.abs(erros)))
+    print("Erro medio de vies:", np.mean(erros))
+    print("Erro quadratico medio:", np.mean(erros**2))
+    print("EQM sustentacao:", np.mean(erros[:,0]**2))
+    print("EQM arrasto:", np.mean(erros[:,1]**2))
+    print("EQM momento:", np.mean(erros[:,2]**2))
+    print("Tempo de execucao:", t1-t0)
+
+    saidas_af=np.zeros((len(saidas),3), dtype=np.float64)
+    x_t=np.array(x_teste)
+    t2=time.process_time()
+    for i in range(len(saidas)):
+        aerofolio=AerofolioFino.AerofolioFinoNACA4([x_t[i,0],x_t[i,1],x_t[i,2]],alfa=x_t[i,3],U0=x_t[i,4])
+        saidas_af[i]=Execucao.teoria_af_fino(aerofolio)
+    t3=time.process_time()
+    erros_af=saidas_af-saidas
+    print("Erro maximo AF:", np.max(np.abs(erros_af)))
+    print("Erro medio de vies AF:", np.mean(erros_af))
+    print("Erro quadratico medio AF:", np.mean(erros_af**2))
+    print("EQM sustentacao AF:", np.mean(erros_af[:,0]**2))
+    print("EQM arrasto AF:", np.mean(erros_af[:,1]**2))
+    print("EQM momento AF:", np.mean(erros_af[:,2]**2))
+    print("Tempo de execucao AF:", t3-t2)
+
+
+
 if __name__=="__main__":
-    compara_metodos(0.04,0.40,0.12,100, picles=False)
+    compara_metodos(0.04,0.40,0.12,100, picles=True)
+    avalia_dados_teste()
     plt.show()
