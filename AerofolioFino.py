@@ -1,4 +1,4 @@
-from Definicoes import np,plt, mcolors
+from Definicoes import np,plt, mcolors, mtick
 from Definicoes import os
 
 
@@ -125,6 +125,10 @@ class AerofolioFino(Aerofolio) :
             eixo.set_xlim(-0.05, 1.05)
             eixo.set_ylim(-0.2, 0.2)
             eixo.set_aspect("equal")
+            eixo.set_xlabel("x")
+            eixo.set_ylabel("y")
+            eixo.xaxis.set_major_formatter(mtick.StrMethodFormatter("{x:.1f} D"))
+            eixo.yaxis.set_major_formatter(mtick.StrMethodFormatter("{x:.1f} D"))
         x = np.arange(0, 1.01, 0.001)
         x1 = self.x_sup(x)
         x2 = self.x_inf(x)
