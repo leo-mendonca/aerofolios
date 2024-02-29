@@ -830,6 +830,9 @@ def validacao_tempo_convergencia(Re=1, n=100, dt=0.05, h=1.0, folga=6, T_max=100
 
 
 if __name__ == "__main__" :
+    teste_poiseuille(tamanho=0.05, executa=False, dt=0.01, T=5, Re=50, formulacao="F")
+    teste_degrau(h=0.1,h2=0.01,dt=0.01,T=30,Re=50,L=10,executa=False)
+    raise SystemExit
     ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
     af=AerofolioFino.AerofolioFinoNACA4([.04,.4,.12],0,100)
     teste_aerofolio(af, n=100, h=1.0, folga=6, T=50, dt=0.05, Re=100, formulacao="F", executa=True, plota_tudo=True)
@@ -858,7 +861,6 @@ if __name__ == "__main__" :
     # for Re in (0.1,1,10,100,500,1000):
     #     validacao_tempo_convergencia(Re=Re, n=100, dt=0.05, h=1.0, folga=6, T_max=100, aerofolio=AerofolioFino.NACA4412_10, formulacao="F")
     # plt.show(block=True)
-    # teste_poiseuille(tamanho=0.05, executa=True, dt=0.01, T=10, Re=50, formulacao="F")
     # plt.show(block=False)
     # plt.show(block=True)
     #

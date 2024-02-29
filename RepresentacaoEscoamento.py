@@ -1,5 +1,5 @@
 import ElementosFinitos
-from Definicoes import plt, np, os
+from Definicoes import plt, np, os, mtick
 
 
 def plotar_momento(Problema, resultados, t, plotar_auxiliares=True) :
@@ -70,6 +70,14 @@ def plotar_pressao(Problema, p, lim_x=(0, 10), y_med=0.5, referencia=None) :
     eixo.legend()
     return
 
+def formatador_colorbar(x, pos=None):
+    '''Formatador a ser aplicado nos ticks da colorbar do mapa_de_cor.
+    Deve ser definido de modo que todos os numeros tenham o mesmo tamanho de string'''
+    if x>=0:
+        return " {0:.2f}".format(x)
+    else:
+        return "{0:.2f}".format(x)
+
 
 def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[], x_grade=None, y_grade=None, local_grade=None, plota=True, titulo="", path_salvar=None, aspecto=(6, 4), operacao=None) :
     '''
@@ -120,7 +128,7 @@ def mapa_de_cor(Problema, variavel, ordem, resolucao=0.01, areas_excluidas=[], x
         fig.set_size_inches(aspecto)
         eixo.set_aspect("equal")
         eixocbar = fig.add_axes([eixo.get_position().x1 + 0.01, eixo.get_position().y0, 0.02, eixo.get_position().height])
-        plt.colorbar(plot_mapa, cax=eixocbar)
+        cbar=plt.colorbar(plot_mapa, cax=eixocbar, format=mtick.FuncFormatter(formatador_colorbar))
     if not path_salvar is None :
         plt.savefig(path_salvar, dpi=300, bbox_inches="tight")
     return (x, y), mapa
