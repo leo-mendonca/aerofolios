@@ -484,12 +484,14 @@ def teste_aerofolio(aerofolio, Re, n=100, h=1.0, dt=0.05, folga=6, T=50, formula
         fig2, eixo2 = plt.subplots()
         eixo2.set_ylim(Problema.y_min, Problema.y_max)
         eixo2.set_xlim(Problema.x_min, Problema.x_max)
+        eixo2.set_xticks([])
+        eixo2.set_yticks([])
         eixo2.set_aspect("equal")
         eixo2.grid(False)
         x, y, z = Problema.x_nos.T
         elementos = Problema.elementos_o1
         eixo2.triplot(x, y, elementos, color="k", linewidth=0.5, alpha=0.5)
-        plt.savefig(os.path.join(nome_diretorio, "Malha.png"), dpi=300, bbox_inches="tight")
+        plt.savefig(os.path.join(nome_diretorio, "Malha.png"), dpi=600, bbox_inches="tight")
         ##Plotando apenas os contornos
         fig3, eixo3 = plt.subplots()
         eixo3.set_ylim(Problema.y_min, Problema.y_max)
@@ -830,12 +832,13 @@ def validacao_tempo_convergencia(Re=1, n=100, dt=0.05, h=1.0, folga=6, T_max=100
 
 
 if __name__ == "__main__" :
-    teste_poiseuille(tamanho=0.05, executa=False, dt=0.01, T=5, Re=50, formulacao="F")
-    teste_degrau(h=0.1,h2=0.01,dt=0.01,T=30,Re=50,L=10,executa=False)
-    raise SystemExit
+    # teste_poiseuille(tamanho=0.05, executa=False, dt=0.01, T=5, Re=50, formulacao="F")
+    # teste_degrau(h=0.1,h2=0.01,dt=0.01,T=30,Re=50,L=10,executa=False)
+    # raise SystemExit
     ##Escolha de parametros: n=100, h=1.0, dt=0.05, folga=6, T=50
     af=AerofolioFino.AerofolioFinoNACA4([.04,.4,.12],0,100)
-    teste_aerofolio(af, n=100, h=1.0, folga=6, T=50, dt=0.05, Re=100, formulacao="F", executa=True, plota_tudo=True)
+    teste_aerofolio(af, n=50, h=0.5, folga=2, T=1, dt=0.05, Re=100, formulacao="F", executa=True, plota_tudo=True)
+    plt.show(block=False)
     for i, alfa in enumerate(np.arange(-15,16,1)*np.pi/180):
         af=AerofolioFino.AerofolioFinoNACA4([.04,.4,.12],alfa,100)
         teste_aerofolio(af, n=100, h=1.0, folga=6, T=50, dt=0.05, Re=100, formulacao="F", executa=True)

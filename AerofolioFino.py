@@ -129,7 +129,7 @@ class AerofolioFino(Aerofolio) :
             eixo.set_ylabel("y")
             eixo.xaxis.set_major_formatter(mtick.StrMethodFormatter("{x:.1f} D"))
             eixo.yaxis.set_major_formatter(mtick.StrMethodFormatter("{x:.1f} D"))
-        x = np.arange(0, 1.01, 0.001)
+        x = np.arange(0, 1.01, 0.0001)
         x1 = self.x_sup(x)
         x2 = self.x_inf(x)
         ymed = self.y_med(x)
